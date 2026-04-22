@@ -17,7 +17,7 @@ function isLockedByOther(tbl, byUserId) {
 router.get('/', authenticate, async (req, res) => {
   let query = supabase
     .from('tables_queue')
-    .select('*, table_items(*, products(name, price)), seller:users!seller_id(name)')
+    .select('*, table_items(*, products(name, price)), seller:users!seller_id(name), client:clients!client_id(name)')
     .order('created_at');
 
   // Sellers only see their own tables
@@ -31,8 +31,8 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // POST /api/tables — create new table (seller)
-router.post('/', authenticate, requireRole('vendedor', 'encargado', 'dueno'), async (req, res) => {
-  const { table_number, client_id, comment } = req.body;
+router.post('/', authenticate, requireRole('vendedor', 'cajero', 'encargado', 'dueno'), async (req, res) => {
+  const { table_number, client_id, comment, discount_value, discount_type, discount_id, discount_name } = req.body;
 
   if (!table_number) {
     return res.status(400).json({ error: 'table_number is required' });
@@ -44,8 +44,12 @@ router.post('/', authenticate, requireRole('vendedor', 'encargado', 'dueno'), as
       table_number,
       seller_id: req.user.id,
       status: 'open',
-      client_id: client_id || null,
-      comment: comment || '',
+      client_id:     client_id    || null,
+      comment:       comment      || '',
+      discount_value: discount_value ?? 0,
+      discount_type:  discount_type  ?? 'fixed',
+      discount_id:    discount_id    ?? null,
+      discount_name:  discount_name  ?? null,
     }])
     .select()
     .single();
@@ -58,7 +62,7 @@ router.post('/', authenticate, requireRole('vendedor', 'encargado', 'dueno'), as
 router.get('/:id', authenticate, async (req, res) => {
   const { data, error } = await supabase
     .from('tables_queue')
-    .select('*, table_items(*, products(id, name, price, code)), seller:users!seller_id(name)')
+    .select('*, table_items(*, products(id, name, price, code)), seller:users!seller_id(name), client:clients!client_id(name)')
     .eq('id', req.params.id)
     .single();
 
@@ -67,9 +71,9 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // PUT /api/tables/:id — update table (add items, client, etc.)
-router.put('/:id', authenticate, requireRole('vendedor', 'encargado', 'dueno'), async (req, res) => {
+router.put('/:id', authenticate, requireRole('vendedor', 'cajero', 'encargado', 'dueno'), async (req, res) => {
   const { id } = req.params;
-  const { table_number, items, client_id, seller_id, comment } = req.body;
+  const { table_number, items, client_id, seller_id, comment, discount_value, discount_type, discount_id, discount_name } = req.body;
 
   // Verify seller owns the table or is manager/owner
   if (req.user.role === 'vendedor') {
@@ -107,6 +111,10 @@ router.put('/:id', authenticate, requireRole('vendedor', 'encargado', 'dueno'), 
   if (client_id !== undefined) updateFields.client_id = client_id || null;
   if (comment !== undefined) updateFields.comment = comment;
   if (seller_id && req.user.role !== 'vendedor') updateFields.seller_id = seller_id;
+  if (discount_value !== undefined) updateFields.discount_value = discount_value ?? 0;
+  if (discount_type  !== undefined) updateFields.discount_type  = discount_type  ?? 'fixed';
+  if (discount_id    !== undefined) updateFields.discount_id    = discount_id    ?? null;
+  if (discount_name  !== undefined) updateFields.discount_name  = discount_name  ?? null;
   updateFields.updated_at = new Date().toISOString();
 
   await supabase.from('tables_queue').update(updateFields).eq('id', id);
@@ -132,7 +140,7 @@ router.put('/:id', authenticate, requireRole('vendedor', 'encargado', 'dueno'), 
 
   const { data, error } = await supabase
     .from('tables_queue')
-    .select('*, table_items(*, products(name, price)), seller:users!seller_id(name)')
+    .select('*, table_items(*, products(name, price)), seller:users!seller_id(name), client:clients!client_id(name)')
     .eq('id', id)
     .single();
 
@@ -141,7 +149,7 @@ router.put('/:id', authenticate, requireRole('vendedor', 'encargado', 'dueno'), 
 });
 
 // POST /api/tables/:id/confirm — seller confirms table, sends to cashier queue
-router.post('/:id/confirm', authenticate, requireRole('vendedor', 'encargado', 'dueno'), async (req, res) => {
+router.post('/:id/confirm', authenticate, requireRole('vendedor', 'cajero', 'encargado', 'dueno'), async (req, res) => {
   const { id } = req.params;
 
   const { data: tbl } = await supabase
@@ -171,7 +179,7 @@ router.post('/:id/confirm', authenticate, requireRole('vendedor', 'encargado', '
   res.json(data);
 });
 
-// POST /api/tables/:id/complete — cashier completes sale
+// POST /api/tables/:id/complete — cashier completes sale, returns sale_id for comprobante flow
 router.post('/:id/complete', authenticate, requireRole('cajero', 'encargado', 'dueno'), async (req, res) => {
   const { id } = req.params;
 
@@ -181,7 +189,18 @@ router.post('/:id/complete', authenticate, requireRole('cajero', 'encargado', 'd
   });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ message: 'Sale completed', data });
+
+  // Fetch the ID of the sale that was just created [AC]
+  const { data: latestSale } = await supabase
+    .from('sales')
+    .select('id')
+    .eq('cashier_id', req.user.id)
+    .gte('date', new Date(Date.now() - 15000).toISOString())
+    .order('date', { ascending: false })
+    .limit(1)
+    .single();
+
+  res.json({ message: 'Sale completed', sale_id: latestSale?.id ?? null, data });
 });
 
 // POST /api/tables/:id/lock — adquiere el candado del ticket

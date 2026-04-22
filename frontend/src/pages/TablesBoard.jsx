@@ -258,10 +258,13 @@ export default function TablesBoard() {
           comment:        item.comment        || '',
         }))
       );
-      setClientId(existing.client_id ? `client:${existing.client_id}` : '');
+      setClientId(
+        existing.client_id   ? `client:${existing.client_id}` :
+        existing.discount_id ? `discount:${existing.discount_id}` : ''
+      );
       setVendedorId(existing.seller_id || (hasRole('vendedor') ? user?.id : '') || '');
       setComment(existing.comment || '');
-      setDiscount({ value: '', type: 'fixed' });
+      setDiscount({ value: String(existing.discount_value || ''), type: existing.discount_type || 'fixed' });
 
       // Adquirir lock si el ticket está abierto
       if (existing.status === 'open') {
@@ -320,16 +323,34 @@ export default function TablesBoard() {
     return null; // es un descuento del catálogo, no hay client_id
   }
 
+  // Resuelve el nombre visible del cliente o descuento de catálogo seleccionado
+  function resolveDisplayName(compositeId) {
+    if (!compositeId) return null;
+    if (compositeId.startsWith('client:')) {
+      const id = compositeId.slice(7);
+      return clients.find((c) => c.id === id)?.name ?? null;
+    }
+    if (compositeId.startsWith('discount:')) {
+      const id = compositeId.slice(9);
+      return discounts.find((d) => d.id === id)?.name ?? null;
+    }
+    return null;
+  }
+
   async function handleSave() {
     if (!vendedorId) { setPanelError('Selecciona un vendedor.'); return; }
     setSaving(true);
     setPanelError('');
     try {
       const payload = {
-        items:     cartItems,
-        client_id: resolveClientId(clientId),
-        seller_id: vendedorId,
+        items:          cartItems,
+        client_id:      resolveClientId(clientId),
+        seller_id:      vendedorId,
         comment,
+        discount_value: parseFloat(discount.value) || 0,
+        discount_type:  discount.type,
+        discount_id:    clientId.startsWith('discount:') ? clientId.slice(9) : null,
+        discount_name:  resolveDisplayName(clientId),
       };
       if (panelTicket) {
         await api.put(`/api/tables/${panelTicket.id}`, payload);
@@ -359,10 +380,14 @@ export default function TablesBoard() {
     try {
       // Guardar items/datos actuales antes de confirmar
       await api.put(`/api/tables/${panelTicket.id}`, {
-        items:     cartItems,
-        client_id: resolveClientId(clientId),
-        seller_id: vendedorId,
+        items:          cartItems,
+        client_id:      resolveClientId(clientId),
+        seller_id:      vendedorId,
         comment,
+        discount_value: parseFloat(discount.value) || 0,
+        discount_type:  discount.type,
+        discount_id:    clientId.startsWith('discount:') ? clientId.slice(9) : null,
+        discount_name:  resolveDisplayName(clientId),
       });
       // Ahora confirmar
       await api.post(`/api/tables/${panelTicket.id}/confirm`, {});

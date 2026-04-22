@@ -10,6 +10,7 @@ import CashierQueue from './pages/CashierQueue';
 import StockList from './pages/StockList';
 import SalesHistory from './pages/SalesHistory';
 import EmployeesDashboard from './pages/EmployeesDashboard';
+import ConnectionsPage from './pages/ConnectionsPage';
 import './styles.css';
 
 function DefaultPage() {
@@ -28,12 +29,13 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<DefaultPage />} />
-        <Route path="/tables" element={<ProtectedRoute roles={['vendedor', 'encargado', 'dueno']}><TablesBoard /></ProtectedRoute>} />
-        <Route path="/tables/:id/edit" element={<ProtectedRoute roles={['vendedor', 'encargado', 'dueno']}><TableEditor /></ProtectedRoute>} />
+        <Route path="/tables" element={<ProtectedRoute roles={['vendedor', 'cajero', 'encargado', 'dueno']}><TablesBoard /></ProtectedRoute>} />
+        <Route path="/tables/:id/edit" element={<ProtectedRoute roles={['vendedor', 'cajero', 'encargado', 'dueno']}><TableEditor /></ProtectedRoute>} />
         <Route path="/cashier" element={<ProtectedRoute roles={['cajero', 'encargado', 'dueno']}><CashierQueue /></ProtectedRoute>} />
         <Route path="/stock" element={<ProtectedRoute><StockList /></ProtectedRoute>} />
         <Route path="/sales" element={<ProtectedRoute><SalesHistory /></ProtectedRoute>} />
         <Route path="/employees" element={<ProtectedRoute roles={['encargado', 'dueno']}><EmployeesDashboard /></ProtectedRoute>} />
+        <Route path="/connections" element={<ProtectedRoute roles={['dueno']}><ConnectionsPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

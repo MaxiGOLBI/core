@@ -107,4 +107,22 @@ router.get('/export', authenticate, requireRole('encargado', 'dueno'), async (re
   return res.send('\uFEFF' + csv); // BOM for Excel UTF-8
 });
 
+// PATCH /api/sales/:id/cae — persist CAE data after AFIP approval [IV, REH]
+router.patch('/:id/cae', authenticate, requireRole('cajero', 'encargado', 'dueno'), async (req, res) => {
+  const { id } = req.params;
+  const { cae, cae_vto } = req.body;
+
+  if (!cae || !cae_vto) {
+    return res.status(400).json({ error: 'cae and cae_vto are required' });
+  }
+
+  const { error } = await supabase
+    .from('sales')
+    .update({ cae, cae_vto })
+    .eq('id', id);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ message: 'CAE saved' });
+});
+
 module.exports = router;

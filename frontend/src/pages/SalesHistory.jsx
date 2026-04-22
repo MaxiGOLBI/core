@@ -25,13 +25,15 @@ export default function SalesHistory() {
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
 
-  async function fetchSales() {
+  async function fetchSales(overrideFilters) {
     setLoading(true);
     setError('');
     try {
+      const f = overrideFilters ?? filters;
       const params = new URLSearchParams();
-      if (filters.from) params.set('from', filters.from);
-      if (filters.to) params.set('to', filters.to);
+      if (f.from) params.set('from', f.from);
+      // Incluir todo el día seleccionado sumando hasta las 23:59:59
+      if (f.to)   params.set('to', `${f.to}T23:59:59`);
       const query = params.toString() ? `?${params}` : '';
       const data = await api.get(`/api/sales${query}`);
       setSales(data);
@@ -47,12 +49,15 @@ export default function SalesHistory() {
   const displayedSales = sales.filter((s) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    const sellerName = (s.users?.name ?? '').toLowerCase();
-    const clientName = (s.clients?.name ?? '').toLowerCase();
+    const sellerName   = (s.users?.name ?? '').toLowerCase();
+    const clientName   = (s.clients?.name ?? '').toLowerCase();
     const productNames = (s.details_json ?? [])
       .map((i) => (getProductName(i) ?? '').toLowerCase())
       .join(' ');
-    return sellerName.includes(q) || clientName.includes(q) || productNames.includes(q);
+    const dateStr = new Date(s.date).toLocaleDateString('es-AR', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    }).toLowerCase();
+    return sellerName.includes(q) || clientName.includes(q) || productNames.includes(q) || dateStr.includes(q);
   });
 
   async function handleExportCSV() {
@@ -150,30 +155,32 @@ export default function SalesHistory() {
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1.5">Desde</label>
             <input type="date" value={filters.from}
-              onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
+              onChange={(e) => {
+                const newF = { ...filters, from: e.target.value };
+                setFilters(newF);
+                fetchSales(newF);
+              }}
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1.5">Hasta</label>
             <input type="date" value={filters.to}
-              onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
+              onChange={(e) => {
+                const newF = { ...filters, to: e.target.value };
+                setFilters(newF);
+                fetchSales(newF);
+              }}
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Buscar por vendedor, cliente o producto</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Buscar por vendedor, cliente, producto o fecha</label>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar..."
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-60" />
           </div>
-          <button onClick={fetchSales}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors">
-            Filtrar
+          <button onClick={() => { const empty = { from: '', to: '' }; setFilters(empty); setSearch(''); fetchSales(empty); }}
+            className="border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            Limpiar
           </button>
-          {(filters.from || filters.to || search) && (
-            <button onClick={() => { setFilters({ from: '', to: '' }); setSearch(''); }}
-              className="text-slate-400 hover:text-slate-700 text-sm transition-colors">
-              Limpiar
-            </button>
-          )}
         </div>
       </div>
 
@@ -192,6 +199,8 @@ export default function SalesHistory() {
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Vendedor</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Cliente</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Productos</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Descuento</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Comentario</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Comision</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Detalle</th>
@@ -199,9 +208,9 @@ export default function SalesHistory() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Cargando...</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">Cargando...</td></tr>
             ) : displayedSales.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Sin ventas en este periodo.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">Sin ventas en este periodo.</td></tr>
             ) : (
               displayedSales.flatMap((sale) => {
                 const commission = getCommissionTotal(sale);
@@ -221,6 +230,14 @@ export default function SalesHistory() {
                     <td className="px-4 py-3 text-slate-500 max-w-xs truncate" title={productSummary}>
                       {productSummary}
                     </td>
+                    <td className="px-4 py-3 text-right text-red-500 text-xs whitespace-nowrap">
+                      {sale.discount_value > 0
+                        ? sale.discount_type === 'percent'
+                          ? `-${sale.discount_value}%`
+                          : `-$${parseFloat(sale.discount_value).toFixed(2)}`
+                        : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">{sale.comment || '-'}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-900">
                       ${parseFloat(sale.total).toFixed(2)}
                     </td>
@@ -241,7 +258,7 @@ export default function SalesHistory() {
                 if (isExpanded && items.length > 0) {
                   rows.push(
                     <tr key={`${sale.id}-detail`} className="bg-indigo-50/60">
-                      <td colSpan={7} className="px-6 py-3">
+                      <td colSpan={9} className="px-6 py-3">
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="text-slate-500 border-b border-indigo-100">
@@ -249,6 +266,7 @@ export default function SalesHistory() {
                               <th className="text-center pb-2 font-semibold">Cantidad</th>
                               <th className="text-right pb-2 font-semibold">Precio unit.</th>
                               <th className="text-right pb-2 font-semibold">Descuento</th>
+                              <th className="text-left pb-2 font-semibold">Comentario</th>
                               <th className="text-right pb-2 font-semibold">Subtotal</th>
                               <th className="text-right pb-2 font-semibold">Comision</th>
                             </tr>
@@ -275,6 +293,7 @@ export default function SalesHistory() {
                                       ? `${item.discount_value}${item.discount_type === 'percent' ? '%' : '$'}`
                                       : '-'}
                                   </td>
+                                  <td className="py-1.5 text-slate-400 text-xs">{item.comment || '-'}</td>
                                   <td className="py-1.5 text-right font-semibold text-slate-800">${subtotal.toFixed(2)}</td>
                                   <td className="py-1.5 text-right text-slate-600">
                                     {comm !== null ? `$${(comm * item.qty).toFixed(2)}` : '-'}

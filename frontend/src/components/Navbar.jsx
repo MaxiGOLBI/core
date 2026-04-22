@@ -32,7 +32,7 @@ export default function Navbar() {
       <div className="flex items-center gap-8">
         <span className="font-bold text-indigo-400 text-xl tracking-tight">Core</span>
         <div className="flex items-center gap-1">
-          {hasRole('vendedor', 'encargado', 'dueno') && (
+          {hasRole('vendedor', 'cajero', 'encargado', 'dueno') && (
             <NavLink to="/tables" className={navClass}>Tickets</NavLink>
           )}
           {hasRole('cajero', 'encargado', 'dueno') && (
@@ -46,6 +46,9 @@ export default function Navbar() {
           )}
           {hasRole('encargado', 'dueno') && (
             <NavLink to="/employees" className={navClass}>Empleados</NavLink>
+          )}
+          {hasRole('dueno') && (
+            <NavLink to="/connections" className={navClass}>Conexiones</NavLink>
           )}
         </div>
       </div>
