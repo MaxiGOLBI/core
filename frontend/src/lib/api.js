@@ -39,8 +39,12 @@ async function tryRefresh() {
 
 async function request(method, path, body, retry = true) {
   const token = getToken();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
   const opts = {
     method,
+    signal: controller.signal,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -49,8 +53,16 @@ async function request(method, path, body, retry = true) {
 
   if (body) opts.body = JSON.stringify(body);
 
-  const res = await fetch(`${API_URL}${path}`, opts);
-  const data = await res.json().catch(() => ({}));
+  let res, data;
+  try {
+    res = await fetch(`${API_URL}${path}`, opts);
+    data = await res.json().catch(() => ({}));
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('La solicitud tardó demasiado. Verificá tu conexión.');
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   // Auto-refresh on 401 and retry once
   if (res.status === 401 && retry) {

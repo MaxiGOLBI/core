@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', company_name: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -27,6 +27,7 @@ export default function RegisterPage() {
         name: form.name,
         email: form.email,
         password: form.password,
+        company_name: form.company_name,
       });
       setSuccess(true);
     } catch (err) {
@@ -78,6 +79,18 @@ export default function RegisterPage() {
                 onChange={(e) => update('name', e.target.value)}
                 required
                 placeholder="Tu nombre completo"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-slate-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Nombre de la empresa</label>
+              <input
+                type="text"
+                value={form.company_name}
+                onChange={(e) => update('company_name', e.target.value)}
+                required
+                placeholder="Ej:Bit and Brain"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-slate-400"
               />
             </div>

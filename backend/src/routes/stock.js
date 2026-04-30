@@ -20,7 +20,14 @@ router.get('/', authenticate, async (req, res) => {
   let query = supabase
     .from('products')
     .select('id, code, name, price, stock, commission_default, faulty_stock')
+    .eq('company_id', req.user.company_id)
     .order('name');
+
+  if (req.user.role !== 'dueno') {
+    query = query.eq('branch_id', req.user.branch_id);
+  } else if (req.query.branch_id) {
+    query = query.eq('branch_id', req.query.branch_id);
+  }
 
   if (search) {
     query = query.ilike('name', `%${search}%`);
@@ -49,6 +56,7 @@ router.patch('/:id', authenticate, async (req, res) => {
       .from('products')
       .select('stock, faulty_stock')
       .eq('id', id)
+      .eq('company_id', req.user.company_id)
       .single();
 
     if (fetchErr || !current) return res.status(404).json({ error: 'Product not found' });
@@ -76,6 +84,7 @@ router.patch('/:id', authenticate, async (req, res) => {
       .from('products')
       .update({ stock: newStock, faulty_stock: newFaulty })
       .eq('id', id)
+      .eq('company_id', req.user.company_id)
       .select('id, code, name, stock, faulty_stock')
       .single();
 
@@ -91,6 +100,7 @@ router.patch('/:id', authenticate, async (req, res) => {
       .from('products')
       .update({ stock })
       .eq('id', id)
+      .eq('company_id', req.user.company_id)
       .select('id, code, name, stock, faulty_stock')
       .single();
 

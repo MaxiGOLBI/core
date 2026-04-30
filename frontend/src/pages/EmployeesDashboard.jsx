@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { NumericInput } from '../components/NumericInput';
 
 export default function EmployeesDashboard() {
   const { hasRole } = useAuth();
@@ -10,18 +11,20 @@ export default function EmployeesDashboard() {
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
   const [users, setUsers] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [activeTab, setActiveTab] = useState('commissions');
   const [error, setError] = useState('');
 
   async function load() {
     try {
-      const [bal, com, disc, cls, prods, usrs] = await Promise.all([
+      const [bal, com, disc, cls, prods, usrs, brs] = await Promise.all([
         api.get('/api/commissions/balances'),
         api.get('/api/commissions'),
         api.get('/api/discounts'),
         api.get('/api/clients'),
         api.get('/api/products'),
         api.get('/api/users'),
+        api.get('/api/branches'),
       ]);
       setBalances(bal);
       setCommissions(com);
@@ -29,6 +32,7 @@ export default function EmployeesDashboard() {
       setClients(cls);
       setProducts(prods);
       setUsers(usrs);
+      setBranches(brs);
     } catch (err) {
       setError(err.message);
     }
@@ -74,36 +78,56 @@ export default function EmployeesDashboard() {
         ))}
       </div>
 
-      {activeTab === 'balances' && <BalancesTab balances={balances} />}
+      {activeTab === 'balances' && <BalancesTab balances={balances} branches={branches} />}
       {activeTab === 'commissions' && (
-        <CommissionsTab commissions={commissions} products={products} onRefresh={load} />
+        <CommissionsTab products={products} branches={branches} onRefresh={load} />
       )}
       {activeTab === 'clients_discounts' && (
         <ClientsDiscountsTab clients={clients} discounts={discounts} onRefresh={load} />
       )}
       {activeTab === 'users' && hasRole('dueno') && (
-        <UsersTab users={users} onRefresh={load} />
+        <UsersTab users={users} branches={branches} onRefresh={load} />
       )}
     </div>
   );
 }
 
-function BalancesTab({ balances }) {
+const ROLE_LABELS = {
+  vendedor: 'Vendedor',
+  cajero: 'Cajero',
+  encargado: 'Encargado',
+  dueno: 'Dueño',
+};
+
+function BalancesTab({ balances, branches }) {
+  const branchName = (id) => branches.find((b) => b.id === id)?.name ?? <span className="text-slate-400 italic">—</span>;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 border-b border-slate-200">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Vendedor</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Empleado</th>
             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Email</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Rol</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Sucursal</th>
             <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Comisión acumulada</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
+          {balances.length === 0 && (
+            <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm italic">Sin empleados registrados</td></tr>
+          )}
           {balances.map((b) => (
             <tr key={b.id} className="hover:bg-slate-50 transition-colors">
               <td className="px-4 py-3 font-medium text-slate-900">{b.name}</td>
               <td className="px-4 py-3 text-slate-500">{b.email}</td>
+              <td className="px-4 py-3">
+                <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium">
+                  {ROLE_LABELS[b.role] ?? b.role}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-slate-600">{branchName(b.branch_id)}</td>
               <td className="px-4 py-3 text-right font-semibold text-slate-900">
                 ${parseFloat(b.commission_balance ?? 0).toFixed(2)}
               </td>
@@ -115,101 +139,145 @@ function BalancesTab({ balances }) {
   );
 }
 
-function CommissionsTab({ commissions, products, onRefresh }) {
-  const [form, setForm] = useState({ product_id: '', commission_per_unit: '', active: true });
-  const [error, setError] = useState('');
+function CommissionsTab({ products, branches, onRefresh }) {
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm]   = useState({ name: '', price: '', commission_default: '' });
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
+  const [search, setSearch]       = useState('');
 
-  async function handleCreate(e) {
-    e.preventDefault();
+  function startEdit(p) {
+    setEditingId(p.id);
+    setEditForm({ name: p.name, price: p.price, commission_default: p.commission_default ?? 0 });
+    setError('');
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setError('');
+  }
+
+  async function handleSave(id) {
+    setSaving(true);
     setError('');
     try {
-      await api.post('/api/commissions', {
-        product_id: form.product_id,
-        commission_per_unit: parseFloat(form.commission_per_unit),
-        active: form.active,
+      await api.put(`/api/products/${id}`, {
+        name:               editForm.name,
+        price:              parseFloat(editForm.price),
+        commission_default: parseFloat(editForm.commission_default),
       });
-      setForm({ product_id: '', commission_per_unit: '', active: true });
+      setEditingId(null);
       onRefresh();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function handleDelete(id) {
-    if (!confirm('¿Eliminar comisión?')) return;
-    await api.delete(`/api/commissions/${id}`);
-    onRefresh();
-  }
+  const branchName = (id) => branches.find((b) => b.id === id)?.name ?? <span className="text-slate-400 italic">—</span>;
 
-  async function handleToggle(c) {
-    await api.put(`/api/commissions/${c.id}`, { commission_per_unit: c.commission_per_unit, active: !c.active });
-    onRefresh();
-  }
+  const filtered = products.filter((p) =>
+    !search || p.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleCreate} className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 flex gap-4 flex-wrap items-end">
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1.5">Producto</label>
-          <select
-            value={form.product_id}
-            onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))}
-            required
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">Seleccionar...</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+      <div className="flex items-center gap-3">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar producto..."
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-56"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+        )}
+        <span className="text-slate-400 text-sm">{filtered.length} productos</span>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+          <p className="text-red-700 text-xs">{error}</p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1.5">Comisión por unidad ($)</label>
-          <input
-            type="number" min="0" step="0.01"
-            value={form.commission_per_unit}
-            onChange={(e) => setForm((f) => ({ ...f, commission_per_unit: e.target.value }))}
-            required
-            placeholder="0.00"
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-36"
-          />
-        </div>
-        {error && <p className="text-red-600 text-xs self-end">{error}</p>}
-        <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors">
-          Agregar
-        </button>
-      </form>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Producto</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Nombre</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Sucursal</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Precio</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Comisión/u</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Activo</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {commissions.map((c) => (
-              <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 font-medium text-slate-900">{c.products?.name ?? c.product_id}</td>
-                <td className="px-4 py-3 text-right text-slate-700">${parseFloat(c.commission_per_unit).toFixed(2)}</td>
-                <td className="px-4 py-3 text-center">
-                  <button
-                    onClick={() => handleToggle(c)}
-                    className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-colors ${
-                      c.active ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                  >
-                    {c.active ? 'Sí' : 'No'}
-                  </button>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <button onClick={() => handleDelete(c.id)} className="text-slate-400 hover:text-red-600 text-xs font-medium transition-colors">
-                    Eliminar
-                  </button>
-                </td>
+            {filtered.length === 0 && (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm italic">Sin productos</td></tr>
+            )}
+            {filtered.map((p) => (
+              <tr key={p.id} className={`transition-colors ${editingId === p.id ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                {editingId === p.id ? (
+                  <>
+                    <td className="px-3 py-2">
+                      <input
+                        value={editForm.name}
+                        onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                        autoFocus
+                        className="w-full border border-indigo-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-slate-500 text-sm">{branchName(p.branch_id)}</td>
+                    <td className="px-3 py-2">
+                      <NumericInput
+                        value={editForm.price}
+                        onChange={(e) => setEditForm((f) => ({ ...f, price: e.target.value }))}
+                        className="w-28 border border-indigo-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <NumericInput
+                        value={editForm.commission_default}
+                        onChange={(e) => setEditForm((f) => ({ ...f, commission_default: e.target.value }))}
+                        className="w-28 border border-indigo-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleSave(p.id)}
+                          disabled={saving}
+                          className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        >
+                          {saving ? '...' : 'Guardar'}
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          className="text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-slate-50 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
+                    <td className="px-4 py-3 text-slate-500 text-sm">{branchName(p.branch_id)}</td>
+                    <td className="px-4 py-3 text-right text-slate-700">${parseFloat(p.price).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-slate-700">${parseFloat(p.commission_default ?? 0).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => startEdit(p)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
+                      >
+                        Editar
+                      </button>
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -305,8 +373,7 @@ function ClientsDiscountsTab({ clients, discounts, onRefresh }) {
                 <option value="fixed">$ Neto</option>
                 <option value="percent">% Porcentaje</option>
               </select>
-              <input
-                type="number" min="0" step="0.01"
+              <NumericInput
                 value={clientForm.discount_value}
                 onChange={(e) => setClientForm((f) => ({ ...f, discount_value: e.target.value }))}
                 placeholder={clientForm.discount_type === 'percent' ? '0' : '0.00'}
@@ -376,8 +443,7 @@ function ClientsDiscountsTab({ clients, discounts, onRefresh }) {
                 <option value="fixed">$ Neto</option>
                 <option value="percent">% Porcentaje</option>
               </select>
-              <input
-                type="number" min="0" step="0.01"
+              <NumericInput
                 value={discountForm.discount_value}
                 onChange={(e) => setDiscountForm((f) => ({ ...f, discount_value: e.target.value }))}
                 placeholder={discountForm.discount_type === 'percent' ? '0' : '0.00'}
@@ -485,8 +551,7 @@ function ClientsTab({ clients, onRefresh }) {
               <option value="fixed">$ Neto</option>
               <option value="percent">% Porcentaje</option>
             </select>
-            <input
-              type="number" min="0" step="0.01"
+            <NumericInput
               value={form.discount_value}
               onChange={(e) => setForm((f) => ({ ...f, discount_value: e.target.value }))}
               placeholder={form.discount_type === 'percent' ? '0' : '0.00'}
@@ -548,12 +613,19 @@ const ROLE_COLORS = {
   dueno: 'bg-indigo-100 text-indigo-700',
 };
 
-function UsersTab({ users, onRefresh }) {
+function UsersTab({ users, branches, onRefresh }) {
   const { user: currentUser } = useAuth();
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'vendedor' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'vendedor', branch_id: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [editingRole, setEditingRole] = useState(null);
+
+  // Reset branch_id when branches load and none selected yet
+  useEffect(() => {
+    if (branches.length > 0 && !form.branch_id) {
+      setForm((f) => ({ ...f, branch_id: branches[0].id }));
+    }
+  }, [branches]);
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -561,7 +633,7 @@ function UsersTab({ users, onRefresh }) {
     setSuccess('');
     try {
       await api.post('/api/users', form);
-      setForm({ name: '', email: '', password: '', role: 'vendedor' });
+      setForm({ name: '', email: '', password: '', role: 'vendedor', branch_id: branches[0]?.id ?? '' });
       setSuccess('Usuario creado correctamente.');
       onRefresh();
     } catch (err) {
@@ -636,6 +708,20 @@ function UsersTab({ users, onRefresh }) {
               ))}
             </select>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Sucursal</label>
+            <select
+              value={form.branch_id}
+              onChange={(e) => setForm((f) => ({ ...f, branch_id: e.target.value }))}
+              required
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="" disabled>Seleccioná una sucursal</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mt-3">
@@ -661,6 +747,7 @@ function UsersTab({ users, onRefresh }) {
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Nombre</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Email</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Rol</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Sucursal</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
           </thead>
@@ -698,6 +785,9 @@ function UsersTab({ users, onRefresh }) {
                       {ROLE_LABELS_MAP[u.role] ?? u.role}
                     </span>
                   )}
+                </td>
+                <td className="px-4 py-3 text-center text-sm text-slate-500">
+                  {branches.find((b) => b.id === u.branch_id)?.name ?? <span className="italic text-slate-400">—</span>}
                 </td>
                 <td className="px-4 py-3 text-center">
                   {u.id !== currentUser?.id && (

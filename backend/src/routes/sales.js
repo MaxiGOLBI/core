@@ -2,6 +2,43 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { generateTicketPDF } = require('../services/ticket');
+
+const CASHIER_ROLES = ['cajero', 'encargado', 'dueno'];
+
+// POST /api/sales/ticket-pdf — generate a comprobante de compra PDF and return it as a blob
+// Body: { tableNumber, sellerName, cashierName, items, total, date }
+router.post('/ticket-pdf', authenticate, requireRole(...CASHIER_ROLES), async (req, res) => {
+  try {
+    const { tableNumber, items, total } = req.body;
+
+    if (!tableNumber || !Array.isArray(items) || total === undefined) {
+      return res.status(400).json({ error: 'tableNumber, items and total are required' });
+    }
+
+    const now = new Date().toLocaleString('es-AR', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+
+    const pdfBuffer = await generateTicketPDF({
+      tableNumber,
+      sellerName:  req.body.sellerName  || '—',
+      cashierName: req.body.cashierName || req.user.email,
+      items,
+      total,
+      date: req.body.date || now,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="comprobante-${tableNumber}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.end(pdfBuffer);
+  } catch (err) {
+    console.error('[ticket-pdf] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/sales — history with optional filters
 router.get('/', authenticate, async (req, res) => {
@@ -10,7 +47,14 @@ router.get('/', authenticate, async (req, res) => {
   let query = supabase
     .from('sales')
     .select('*, users!seller_id(name), clients(name)')
+    .eq('company_id', req.user.company_id)
     .order('date', { ascending: false });
+
+  if (req.user.role !== 'dueno') {
+    query = query.eq('branch_id', req.user.branch_id);
+  } else if (req.query.branch_id) {
+    query = query.eq('branch_id', req.query.branch_id);
+  }
 
   if (from) query = query.gte('date', from);
   if (to) query = query.lte('date', to);
@@ -69,7 +113,12 @@ router.get('/export', authenticate, requireRole('encargado', 'dueno'), async (re
   let query = supabase
     .from('sales')
     .select('id, date, total, seller_id, cashier_id, client_id, details_json, users!seller_id(name), clients(name)')
+    .eq('company_id', req.user.company_id)
     .order('date', { ascending: false });
+
+  if (req.query.branch_id) {
+    query = query.eq('branch_id', req.query.branch_id);
+  }
 
   if (from) query = query.gte('date', from);
   if (to) query = query.lte('date', to);
@@ -105,24 +154,6 @@ router.get('/export', authenticate, requireRole('encargado', 'dueno'), async (re
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="ventas.csv"');
   return res.send('\uFEFF' + csv); // BOM for Excel UTF-8
-});
-
-// PATCH /api/sales/:id/cae — persist CAE data after AFIP approval [IV, REH]
-router.patch('/:id/cae', authenticate, requireRole('cajero', 'encargado', 'dueno'), async (req, res) => {
-  const { id } = req.params;
-  const { cae, cae_vto } = req.body;
-
-  if (!cae || !cae_vto) {
-    return res.status(400).json({ error: 'cae and cae_vto are required' });
-  }
-
-  const { error } = await supabase
-    .from('sales')
-    .update({ cae, cae_vto })
-    .eq('id', id);
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ message: 'CAE saved' });
 });
 
 module.exports = router;

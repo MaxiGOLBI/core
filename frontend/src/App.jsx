@@ -10,7 +10,8 @@ import CashierQueue from './pages/CashierQueue';
 import StockList from './pages/StockList';
 import SalesHistory from './pages/SalesHistory';
 import EmployeesDashboard from './pages/EmployeesDashboard';
-import ConnectionsPage from './pages/ConnectionsPage';
+import BranchesPage from './pages/BranchesPage';
+import BranchDetailPage from './pages/BranchDetailPage';
 import './styles.css';
 
 function DefaultPage() {
@@ -35,7 +36,8 @@ function AppRoutes() {
         <Route path="/stock" element={<ProtectedRoute><StockList /></ProtectedRoute>} />
         <Route path="/sales" element={<ProtectedRoute><SalesHistory /></ProtectedRoute>} />
         <Route path="/employees" element={<ProtectedRoute roles={['encargado', 'dueno']}><EmployeesDashboard /></ProtectedRoute>} />
-        <Route path="/connections" element={<ProtectedRoute roles={['dueno']}><ConnectionsPage /></ProtectedRoute>} />
+        <Route path="/branches" element={<ProtectedRoute roles={['dueno']}><BranchesPage /></ProtectedRoute>} />
+        <Route path="/branches/:id" element={<ProtectedRoute roles={['dueno']}><BranchDetailPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

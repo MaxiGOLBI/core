@@ -20,7 +20,7 @@ router.post('/login', async (req, res) => {
   // Fetch user profile for role
   const { data: profile } = await supabase
     .from('users')
-    .select('id, name, email, role, commission_balance')
+    .select('id, name, email, role, commission_balance, company_id, branch_id')
     .eq('id', data.user.id)
     .single();
 
@@ -41,7 +41,7 @@ router.post('/refresh', async (req, res) => {
 
   const { data: profile } = await supabase
     .from('users')
-    .select('id, name, email, role, commission_balance')
+    .select('id, name, email, role, commission_balance, company_id, branch_id')
     .eq('id', data.user.id)
     .single();
 

@@ -29,10 +29,10 @@ function createTransporter() {
 // POST /api/users/register — solicitud pública de registro como dueno
 // Guarda pendiente y envía email de aprobación a maxigolbanoff@gmail.com
 router.post('/register', async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, company_name } = req.body;
 
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'name, email y password son requeridos' });
+  if (!name || !email || !password || !company_name) {
+    return res.status(400).json({ error: 'name, email, password y company_name son requeridos' });
   }
   if (password.length < 6) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
@@ -50,7 +50,7 @@ router.post('/register', async (req, res) => {
   }
 
   const token = crypto.randomBytes(32).toString('hex');
-  pendingOwners.set(token, { name, email, password, createdAt: Date.now() });
+  pendingOwners.set(token, { name, email, password, company_name, createdAt: Date.now() });
 
   const appUrl = process.env.APP_URL || 'http://localhost:3001';
   const approveUrl = `${appUrl}/api/users/approve/${token}`;
@@ -58,6 +58,11 @@ router.post('/register', async (req, res) => {
 
   try {
     const transporter = createTransporter();
+    // Absorb any 'error' events emitted by the internal SMTP socket
+    // (unhandled EventEmitter errors crash the Node.js process)
+    transporter.on('error', (err) => {
+      console.error('[nodemailer] transport error event:', err.message);
+    });
     await transporter.sendMail({
       from: `"Core" <${process.env.EMAIL_FROM}>`,
       to: APPROVAL_EMAIL,
@@ -66,6 +71,7 @@ router.post('/register', async (req, res) => {
         <h2>Nueva solicitud de registro</h2>
         <p><strong>Nombre:</strong> ${name}</p>
         <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Empresa:</strong> ${company_name}</p>
         <p>Esta persona quiere registrarse como <strong>Dueño</strong> en Core.</p>
         <br>
         <a href="${approveUrl}" style="background:#16a34a;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:bold;margin-right:12px;">✅ Aprobar</a>
@@ -96,7 +102,7 @@ router.get('/approve/:token', async (req, res) => {
     return res.status(404).send('<h2 style="font-family:sans-serif;color:#dc2626">Link inválido o expirado.</h2>');
   }
 
-  const { name, email, password } = pending;
+  const { name, email, password, company_name } = pending;
 
   // Intentar crear el usuario. Si ya existe (intento previo fallido), actualizarlo.
   let authUserId;
@@ -118,7 +124,7 @@ router.get('/approve/:token', async (req, res) => {
       );
     }
 
-    // Buscar usuario existente por email y confirmarle el email + actualizar contraseña
+    // Buscar usuario existente por email
     const { data: listData, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
     if (listError) {
       return res.status(500).send(
@@ -146,9 +152,22 @@ router.get('/approve/:token', async (req, res) => {
     authUserId = authData.user.id;
   }
 
+  // Create the company for this owner [CA]
+  const { data: company, error: companyError } = await supabase
+    .from('companies')
+    .insert([{ name: company_name }])
+    .select('id')
+    .single();
+
+  if (companyError) {
+    return res.status(500).send(
+      `<h2 style="font-family:sans-serif;color:#dc2626">Error creando empresa: ${companyError.message}</h2>`
+    );
+  }
+
   const { error: profileError } = await supabase
     .from('users')
-    .upsert([{ id: authUserId, name, email, role: 'dueno', commission_balance: 0 }]);
+    .upsert([{ id: authUserId, name, email, role: 'dueno', commission_balance: 0, company_id: company.id }]);
 
   if (profileError) {
     return res.status(500).send(
@@ -161,7 +180,7 @@ router.get('/approve/:token', async (req, res) => {
   res.send(`
     <html><body style="font-family:sans-serif;padding:48px;text-align:center;background:#f9fafb">
       <h1 style="color:#16a34a">✅ Usuario aprobado</h1>
-      <p><strong>${name}</strong> (${email}) fue registrado como Dueño.</p>
+      <p><strong>${name}</strong> (${email}) fue registrado como Dueño de <strong>${company_name}</strong>.</p>
       <p>Ya puede ingresar en Core.</p>
     </body></html>
   `);
@@ -186,20 +205,28 @@ router.get('/reject/:token', async (req, res) => {
   `);
 });
 
-// GET /api/users — listar todos los usuarios (vendedor/cajero/encargado/dueno)
+// GET /api/users — listar usuarios de la misma empresa (filtrado por sucursal si no es dueño)
 router.get('/', authenticate, requireRole('vendedor', 'cajero', 'encargado', 'dueno'), async (req, res) => {
-  const { data, error } = await supabase
+  let query = supabase
     .from('users')
-    .select('id, name, email, role, commission_balance, created_at')
+    .select('id, name, email, role, commission_balance, branch_id, created_at')
+    .eq('company_id', req.user.company_id)
     .order('created_at');
 
+  if (req.user.role !== 'dueno') {
+    query = query.eq('branch_id', req.user.branch_id);
+  } else if (req.query.branch_id) {
+    query = query.eq('branch_id', req.query.branch_id);
+  }
+
+  const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
-// POST /api/users — dueno crea un nuevo usuario con rol asignado
+// POST /api/users — dueno crea un nuevo usuario con rol y sucursal asignados
 router.post('/', authenticate, requireRole('dueno'), async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, branch_id } = req.body;
 
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: 'name, email, password y role son requeridos' });
@@ -209,6 +236,9 @@ router.post('/', authenticate, requireRole('dueno'), async (req, res) => {
   }
   if (!VALID_ROLES.includes(role)) {
     return res.status(400).json({ error: `Rol inválido. Opciones: ${VALID_ROLES.filter(r => r !== 'dueno').join(', ')}` });
+  }
+  if (!branch_id) {
+    return res.status(400).json({ error: 'branch_id (sucursal) es requerido' });
   }
   if (password.length < 6) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
@@ -224,7 +254,7 @@ router.post('/', authenticate, requireRole('dueno'), async (req, res) => {
 
   const { data: profile, error: profileError } = await supabase
     .from('users')
-    .upsert([{ id: authData.user.id, name, email, role, commission_balance: 0 }], { onConflict: 'id' })
+    .upsert([{ id: authData.user.id, name, email, role, commission_balance: 0, company_id: req.user.company_id, branch_id }], { onConflict: 'id' })
     .select()
     .single();
 
@@ -240,7 +270,7 @@ router.delete('/:id', authenticate, requireRole('dueno'), async (req, res) => {
     return res.status(400).json({ error: 'No podés eliminarte a vos mismo' });
   }
 
-  const { error } = await supabase.from('users').delete().eq('id', id);
+  const { error } = await supabase.from('users').delete().eq('id', id).eq('company_id', req.user.company_id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ message: 'Usuario eliminado' });
 });
@@ -261,6 +291,7 @@ router.put('/:id/role', authenticate, requireRole('dueno'), async (req, res) => 
     .from('users')
     .update({ role })
     .eq('id', id)
+    .eq('company_id', req.user.company_id)
     .select()
     .single();
 

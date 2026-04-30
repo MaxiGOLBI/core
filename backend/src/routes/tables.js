@@ -18,7 +18,15 @@ router.get('/', authenticate, async (req, res) => {
   let query = supabase
     .from('tables_queue')
     .select('*, table_items(*, products(name, price)), seller:users!seller_id(name), client:clients!client_id(name)')
+    .eq('company_id', req.user.company_id)
     .order('created_at');
+
+  // Non-dueño: only see their branch's tables
+  if (req.user.role !== 'dueno') {
+    query = query.eq('branch_id', req.user.branch_id);
+  } else if (req.query.branch_id) {
+    query = query.eq('branch_id', req.query.branch_id);
+  }
 
   // Sellers only see their own tables
   if (req.user.role === 'vendedor') {
@@ -44,12 +52,14 @@ router.post('/', authenticate, requireRole('vendedor', 'cajero', 'encargado', 'd
       table_number,
       seller_id: req.user.id,
       status: 'open',
-      client_id:     client_id    || null,
-      comment:       comment      || '',
+      client_id:      client_id     || null,
+      comment:        comment       || '',
       discount_value: discount_value ?? 0,
       discount_type:  discount_type  ?? 'fixed',
       discount_id:    discount_id    ?? null,
       discount_name:  discount_name  ?? null,
+      company_id:     req.user.company_id,
+      branch_id:      req.user.branch_id,
     }])
     .select()
     .single();
@@ -64,6 +74,7 @@ router.get('/:id', authenticate, async (req, res) => {
     .from('tables_queue')
     .select('*, table_items(*, products(id, name, price, code)), seller:users!seller_id(name), client:clients!client_id(name)')
     .eq('id', req.params.id)
+    .eq('company_id', req.user.company_id)
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -81,6 +92,7 @@ router.put('/:id', authenticate, requireRole('vendedor', 'cajero', 'encargado', 
       .from('tables_queue')
       .select('seller_id, status, locked_by, locked_at')
       .eq('id', id)
+      .eq('company_id', req.user.company_id)
       .single();
 
     if (!tbl || tbl.seller_id !== req.user.id) {
@@ -98,6 +110,7 @@ router.put('/:id', authenticate, requireRole('vendedor', 'cajero', 'encargado', 
       .from('tables_queue')
       .select('locked_by, locked_at')
       .eq('id', id)
+      .eq('company_id', req.user.company_id)
       .single();
 
     if (tbl && isLockedByOther(tbl, req.user.id)) {
@@ -156,6 +169,7 @@ router.post('/:id/confirm', authenticate, requireRole('vendedor', 'cajero', 'enc
     .from('tables_queue')
     .select('seller_id, status')
     .eq('id', id)
+    .eq('company_id', req.user.company_id)
     .single();
 
   if (!tbl) return res.status(404).json({ error: 'Table not found' });
@@ -183,6 +197,16 @@ router.post('/:id/confirm', authenticate, requireRole('vendedor', 'cajero', 'enc
 router.post('/:id/complete', authenticate, requireRole('cajero', 'encargado', 'dueno'), async (req, res) => {
   const { id } = req.params;
 
+  // Security: verify table belongs to this company [SFT]
+  const { data: tbl, error: tblErr } = await supabase
+    .from('tables_queue')
+    .select('company_id')
+    .eq('id', id)
+    .eq('company_id', req.user.company_id)
+    .single();
+
+  if (tblErr || !tbl) return res.status(404).json({ error: 'Tabla no encontrada' });
+
   const { data, error } = await supabase.rpc('complete_sale', {
     p_table_id: id,
     p_cashier_id: req.user.id,
@@ -195,6 +219,7 @@ router.post('/:id/complete', authenticate, requireRole('cajero', 'encargado', 'd
     .from('sales')
     .select('id')
     .eq('cashier_id', req.user.id)
+    .eq('company_id', req.user.company_id)
     .gte('date', new Date(Date.now() - 15000).toISOString())
     .order('date', { ascending: false })
     .limit(1)
@@ -211,6 +236,7 @@ router.post('/:id/lock', authenticate, async (req, res) => {
     .from('tables_queue')
     .select('locked_by, locked_at, status')
     .eq('id', id)
+    .eq('company_id', req.user.company_id)
     .single();
 
   if (!tbl) return res.status(404).json({ error: 'Ticket no encontrado' });
@@ -239,6 +265,7 @@ router.post('/:id/unlock', authenticate, async (req, res) => {
     .from('tables_queue')
     .select('locked_by')
     .eq('id', id)
+    .eq('company_id', req.user.company_id)
     .single();
 
   if (!tbl) return res.status(404).json({ error: 'Ticket no encontrado' });
@@ -267,6 +294,7 @@ router.post('/:id/cancel', authenticate, requireRole('cajero', 'encargado', 'due
     .from('tables_queue')
     .update({ status: 'cancelled' })
     .eq('id', id)
+    .eq('company_id', req.user.company_id)
     .select()
     .single();
 
@@ -282,6 +310,7 @@ router.delete('/:id', authenticate, requireRole('vendedor', 'encargado', 'dueno'
     .from('tables_queue')
     .select('seller_id, status')
     .eq('id', id)
+    .eq('company_id', req.user.company_id)
     .single();
 
   if (!tbl) return res.status(404).json({ error: 'Table not found' });

@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { NumericInput } from '../components/NumericInput';
 
 const LEVEL_CLASSES = {
   green: 'bg-emerald-100 text-emerald-700',
@@ -20,8 +21,9 @@ const TABS = [
   { key: 'nostock', label: 'Sin stock' },
 ];
 
-export default function StockList() {
-  const { hasRole } = useAuth();
+export default function StockList({ branchId } = {}) {
+  const { hasRole, user } = useAuth();
+  const isDueno = user?.role === 'dueno';
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,8 +34,9 @@ export default function StockList() {
   const [editStock, setEditStock] = useState('');
 
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', price: '', stock: '', commission_default: '0' });
+  const [formData, setFormData] = useState({ name: '', price: '', stock: '', commission_default: '0', branch_id: branchId || '' });
   const [formError, setFormError] = useState('');
+  const [branches, setBranches] = useState([]);
 
   const [editProduct, setEditProduct] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', price: '', stock: '' });
@@ -48,6 +51,7 @@ export default function StockList() {
     try {
       const params = new URLSearchParams();
       if (searchParam) params.set('search', searchParam);
+      if (branchId) params.set('branch_id', branchId);
       const query = params.toString() ? `?${params}` : '';
       const data = await api.get(`/api/stock${query}`);
       setProducts(data);
@@ -58,7 +62,20 @@ export default function StockList() {
     }
   }
 
-  useEffect(() => { fetchProducts(); }, []);
+  useEffect(() => { fetchProducts(); }, [branchId]);
+
+  // Load branches for dueño when not scoped to a specific branch
+  useEffect(() => {
+    if (!isDueno || branchId) return;
+    api.get('/api/branches')
+      .then((data) => setBranches(Array.isArray(data) ? data : []))
+      .catch((err) => setFormError('No se pudieron cargar las sucursales: ' + err.message));
+  }, [isDueno, branchId]);
+
+  // Keep form branch_id in sync if branchId prop changes
+  useEffect(() => {
+    if (branchId) setFormData((f) => ({ ...f, branch_id: branchId }));
+  }, [branchId]);
 
   // Auto-focus the qty input when popup opens
   useEffect(() => {
@@ -111,9 +128,10 @@ export default function StockList() {
         price: parseFloat(formData.price),
         stock: parseInt(formData.stock),
         commission_default: parseFloat(formData.commission_default),
+        branch_id: formData.branch_id || branchId || undefined,
       });
       setShowForm(false);
-      setFormData({ name: '', price: '', stock: '', commission_default: '0' });
+      setFormData({ name: '', price: '', stock: '', commission_default: '0', branch_id: branchId || '' });
       fetchProducts();
     } catch (err) {
       setFormError(err.message);
@@ -227,6 +245,22 @@ export default function StockList() {
         <form onSubmit={handleCreate} className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-6">
           <h3 className="font-semibold text-slate-900 mb-4">Nuevo producto</h3>
           <div className="grid grid-cols-2 gap-4 text-sm">
+            {isDueno && !branchId && (
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Sucursal</label>
+                <select
+                  value={formData.branch_id}
+                  onChange={(e) => setFormData((f) => ({ ...f, branch_id: e.target.value }))}
+                  required
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="">Seleccionar sucursal...</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="col-span-2">
               <label className="block text-xs font-medium text-slate-600 mb-1.5">Nombre</label>
               <input value={formData.name} onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
@@ -235,7 +269,7 @@ export default function StockList() {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1.5">Precio</label>
-              <input type="number" min="0" step="0.01" value={formData.price}
+              <NumericInput value={formData.price}
                 onChange={(e) => setFormData((f) => ({ ...f, price: e.target.value }))} required placeholder="0.00"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
             </div>
@@ -247,7 +281,7 @@ export default function StockList() {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1.5">Comision por unidad ($)</label>
-              <input type="number" min="0" step="0.01" value={formData.commission_default}
+              <NumericInput value={formData.commission_default}
                 onChange={(e) => setFormData((f) => ({ ...f, commission_default: e.target.value }))} placeholder="0.00"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
             </div>
@@ -288,7 +322,7 @@ export default function StockList() {
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Precio</label>
-                <input type="number" min="0" step="0.01" value={editForm.price}
+                <NumericInput value={editForm.price}
                   onChange={(e) => setEditForm((f) => ({ ...f, price: e.target.value }))} required
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>

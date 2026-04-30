@@ -5,17 +5,25 @@ const { authenticate, requireRole } = require('../middleware/auth');
 
 // GET /api/products
 router.get('/', authenticate, async (req, res) => {
-  const { data, error } = await supabase
+  let query = supabase
     .from('products')
     .select('*')
+    .eq('company_id', req.user.company_id)
     .order('name');
 
+  if (req.user.role !== 'dueno') {
+    query = query.eq('branch_id', req.user.branch_id);
+  } else if (req.query.branch_id) {
+    query = query.eq('branch_id', req.query.branch_id);
+  }
+
+  const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
-// Generates a unique random 6-digit code [SF]
-async function generateUniqueCode() {
+// Generates a unique random 6-digit code scoped to the company [SF]
+async function generateUniqueCode(company_id) {
   let code;
   let exists = true;
   while (exists) {
@@ -24,6 +32,7 @@ async function generateUniqueCode() {
       .from('products')
       .select('id')
       .eq('code', code)
+      .eq('company_id', company_id)
       .maybeSingle();
     exists = !!data;
   }
@@ -32,17 +41,23 @@ async function generateUniqueCode() {
 
 // POST /api/products — encargado/dueno only
 router.post('/', authenticate, requireRole('encargado', 'dueno'), async (req, res) => {
-  const { name, price, stock, commission_default } = req.body;
+  const { name, price, stock, commission_default, branch_id } = req.body;
 
   if (!name || price == null || stock == null) {
     return res.status(400).json({ error: 'name, price and stock are required' });
   }
 
-  const code = await generateUniqueCode();
+  // dueno must specify branch_id; encargado uses their own branch [IV]
+  const targetBranch = req.user.role === 'dueno' ? branch_id : req.user.branch_id;
+  if (!targetBranch) {
+    return res.status(400).json({ error: 'branch_id es requerido' });
+  }
+
+  const code = await generateUniqueCode(req.user.company_id);
 
   const { data, error } = await supabase
     .from('products')
-    .insert([{ code, name, price, stock, commission_default: commission_default ?? 0 }])
+    .insert([{ code, name, price, stock, commission_default: commission_default ?? 0, company_id: req.user.company_id, branch_id: targetBranch }])
     .select()
     .single();
 
@@ -69,6 +84,7 @@ router.put('/:id', authenticate, requireRole('encargado', 'dueno'), async (req, 
     .from('products')
     .update(update)
     .eq('id', id)
+    .eq('company_id', req.user.company_id)
     .select()
     .single();
 
@@ -80,7 +96,7 @@ router.put('/:id', authenticate, requireRole('encargado', 'dueno'), async (req, 
 router.delete('/:id', authenticate, requireRole('encargado', 'dueno'), async (req, res) => {
   const { id } = req.params;
 
-  const { error } = await supabase.from('products').delete().eq('id', id);
+  const { error } = await supabase.from('products').delete().eq('id', id).eq('company_id', req.user.company_id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ message: 'Product deleted' });
 });

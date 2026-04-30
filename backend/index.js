@@ -1,5 +1,13 @@
 require('dotenv').config();
 
+// Prevent silent crashes from unhandled async errors — log them instead
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled promise rejection:', reason);
+});
+
 const express = require('express');
 const cors = require('cors');
 
@@ -12,8 +20,7 @@ const clientRoutes = require('./src/routes/clients');
 const discountRoutes = require('./src/routes/discounts');
 const commissionRoutes = require('./src/routes/commissions');
 const userRoutes = require('./src/routes/users');
-const afipRoutes = require('./src/routes/afip');
-const arcaRoutes = require('./src/routes/arca');
+const branchRoutes  = require('./src/routes/branches');
 const { startCommissionReset } = require('./src/jobs/commissionReset');
 
 const app = express();
@@ -33,8 +40,7 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/discounts', discountRoutes);
 app.use('/api/commissions', commissionRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/afip', afipRoutes);
-app.use('/api/arca', arcaRoutes);
+app.use('/api/branches', branchRoutes);
 
 // Health check
 app.get('/health', (_, res) => res.json({ status: 'ok' }));

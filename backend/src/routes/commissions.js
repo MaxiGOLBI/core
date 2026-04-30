@@ -8,6 +8,7 @@ router.get('/', authenticate, async (req, res) => {
   const { data, error } = await supabase
     .from('commissions')
     .select('*, products(name, code)')
+    .eq('company_id', req.user.company_id)
     .order('product_id');
 
   if (error) return res.status(500).json({ error: error.message });
@@ -24,7 +25,7 @@ router.post('/', authenticate, requireRole('encargado', 'dueno'), async (req, re
 
   const { data, error } = await supabase
     .from('commissions')
-    .insert([{ product_id, commission_per_unit, active: active ?? true }])
+    .insert([{ product_id, commission_per_unit, active: active ?? true, company_id: req.user.company_id }])
     .select()
     .single();
 
@@ -40,6 +41,7 @@ router.put('/:id', authenticate, requireRole('encargado', 'dueno'), async (req, 
     .from('commissions')
     .update({ commission_per_unit, active })
     .eq('id', req.params.id)
+    .eq('company_id', req.user.company_id)
     .select()
     .single();
 
@@ -49,7 +51,7 @@ router.put('/:id', authenticate, requireRole('encargado', 'dueno'), async (req, 
 
 // DELETE /api/commissions/:id
 router.delete('/:id', authenticate, requireRole('encargado', 'dueno'), async (req, res) => {
-  const { error } = await supabase.from('commissions').delete().eq('id', req.params.id);
+  const { error } = await supabase.from('commissions').delete().eq('id', req.params.id).eq('company_id', req.user.company_id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ message: 'Commission deleted' });
 });
@@ -58,8 +60,9 @@ router.delete('/:id', authenticate, requireRole('encargado', 'dueno'), async (re
 router.get('/balances', authenticate, requireRole('encargado', 'dueno'), async (req, res) => {
   const { data, error } = await supabase
     .from('users')
-    .select('id, name, email, commission_balance')
-    .eq('role', 'vendedor')
+    .select('id, name, email, role, branch_id, commission_balance')
+    .neq('role', 'dueno')
+    .eq('company_id', req.user.company_id)
     .order('name');
 
   if (error) return res.status(500).json({ error: error.message });

@@ -16,7 +16,7 @@ function getProductName(item) {
   return item.product_name ?? item.name ?? null;
 }
 
-export default function SalesHistory() {
+export default function SalesHistory({ branchId } = {}) {
   const { hasRole } = useAuth();
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +34,7 @@ export default function SalesHistory() {
       if (f.from) params.set('from', f.from);
       // Incluir todo el día seleccionado sumando hasta las 23:59:59
       if (f.to)   params.set('to', `${f.to}T23:59:59`);
+      if (branchId) params.set('branch_id', branchId);
       const query = params.toString() ? `?${params}` : '';
       const data = await api.get(`/api/sales${query}`);
       setSales(data);
@@ -44,7 +45,7 @@ export default function SalesHistory() {
     }
   }
 
-  useEffect(() => { fetchSales(); }, []);
+  useEffect(() => { fetchSales(); }, [branchId]);
 
   const displayedSales = sales.filter((s) => {
     if (!search.trim()) return true;

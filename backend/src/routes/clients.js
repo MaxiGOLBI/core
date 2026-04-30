@@ -5,7 +5,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 
 // GET /api/clients
 router.get('/', authenticate, async (req, res) => {
-  const { data, error } = await supabase.from('clients').select('*').order('name');
+  const { data, error } = await supabase.from('clients').select('*').eq('company_id', req.user.company_id).order('name');
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
@@ -18,7 +18,7 @@ router.post('/', authenticate, requireRole('vendedor', 'encargado', 'dueno', 'ca
 
   const { data, error } = await supabase
     .from('clients')
-    .insert([{ name, discount_rules: discount_rules ?? {} }])
+    .insert([{ name, discount_rules: discount_rules ?? {}, company_id: req.user.company_id }])
     .select()
     .single();
 
@@ -34,6 +34,7 @@ router.put('/:id', authenticate, requireRole('vendedor', 'encargado', 'dueno', '
     .from('clients')
     .update({ name, discount_rules })
     .eq('id', req.params.id)
+    .eq('company_id', req.user.company_id)
     .select()
     .single();
 
@@ -43,7 +44,7 @@ router.put('/:id', authenticate, requireRole('vendedor', 'encargado', 'dueno', '
 
 // DELETE /api/clients/:id
 router.delete('/:id', authenticate, requireRole('encargado', 'dueno'), async (req, res) => {
-  const { error } = await supabase.from('clients').delete().eq('id', req.params.id);
+  const { error } = await supabase.from('clients').delete().eq('id', req.params.id).eq('company_id', req.user.company_id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ message: 'Client deleted' });
 });

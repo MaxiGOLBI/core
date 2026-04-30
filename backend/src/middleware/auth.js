@@ -19,10 +19,10 @@ async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  // Fetch role from users table
+  // Fetch role, company and branch from users table
   const { data: profile, error: profileError } = await supabaseAuth
     .from('users')
-    .select('role')
+    .select('role, company_id, branch_id')
     .eq('id', user.id)
     .single();
 
@@ -30,7 +30,22 @@ async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'User profile not found' });
   }
 
-  req.user = { id: user.id, email: user.email, role: profile.role };
+  if (!profile.company_id) {
+    return res.status(403).json({ error: 'Cuenta sin empresa asignada. Contactá al administrador.' });
+  }
+
+  // Non-owner roles must have a branch assigned [SFT]
+  if (profile.role !== 'dueno' && !profile.branch_id) {
+    return res.status(403).json({ error: 'Usuario sin sucursal asignada. Contactá al administrador.' });
+  }
+
+  req.user = {
+    id:         user.id,
+    email:      user.email,
+    role:       profile.role,
+    company_id: profile.company_id,
+    branch_id:  profile.branch_id ?? null,
+  };
   next();
 }
 
