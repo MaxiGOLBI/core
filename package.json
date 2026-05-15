@@ -1,0 +1,16 @@
+{
+  "name": "corereal",
+  "version": "1.0.0",
+  "description": "Web application for managing sales with a table/queue system for a cell phone store. Features: tables, stock, commissions, discounts, clients, and role-based access.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"blue,green\" \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
