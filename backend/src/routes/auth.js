@@ -1,7 +1,18 @@
 const express = require('express');
 const router = express.Router();
+const { createClient } = require('@supabase/supabase-js');
 const supabase = require('../config/supabase');
 const { authenticate } = require('../middleware/auth');
+
+// Dedicated client for signInWithPassword / refreshSession.
+// These calls mutate the client's internal auth session, which would replace the
+// service-role Authorization header on the shared client and trigger RLS on every
+// subsequent DB query. Using a separate instance keeps the shared client clean.
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
+);
 
 // Enriches a profile with allowed_views from role_permissions (if custom rules exist)
 async function enrichProfile(profile) {
@@ -26,7 +37,7 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabaseAuth.auth.signInWithPassword({ email, password });
 
   if (error) {
     return res.status(401).json({ error: error.message });
@@ -59,7 +70,7 @@ router.post('/refresh', async (req, res) => {
   const { refresh_token } = req.body;
   if (!refresh_token) return res.status(400).json({ error: 'refresh_token required' });
 
-  const { data, error } = await supabase.auth.refreshSession({ refresh_token });
+  const { data, error } = await supabaseAuth.auth.refreshSession({ refresh_token });
   if (error || !data.session) return res.status(401).json({ error: 'Invalid or expired refresh token' });
 
   const { data: profile } = await supabase

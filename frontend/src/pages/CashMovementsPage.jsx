@@ -115,7 +115,7 @@ export default function CashMovementsPage() {
     const [from, to] = getPeriodRange(period, customFrom, customTo);
     const params = new URLSearchParams();
     params.set('from', from);
-    params.set('to', to + 'T23:59:59');
+    params.set('to', to);
     if (typeFilter)   params.set('type', typeFilter);
     if (branchFilter) params.set('branch_id', branchFilter);
     return params.toString();

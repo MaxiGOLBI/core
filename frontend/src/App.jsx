@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import TablesBoard from './pages/TablesBoard';
+import VendorSalesPage from './pages/VendorSalesPage';
 import TableEditor from './pages/TableEditor';
 import CashierQueue from './pages/CashierQueue';
 import StockList from './pages/StockList';
@@ -37,6 +38,7 @@ function DefaultPage() {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === 'cajero') return <Navigate to="/cashier" replace />;
   if (user.role === 'dueno') return <Navigate to="/employees" replace />;
+  if (user.role === 'vendedor') return <Navigate to="/mis-ventas" replace />;
   return <Navigate to="/tables" replace />;
 }
 
@@ -49,6 +51,7 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<DefaultPage />} />
+        <Route path="/mis-ventas" element={<ProtectedRoute roles={['vendedor', 'cajero']}><VendorSalesPage /></ProtectedRoute>} />
         <Route path="/tables" element={<ProtectedRoute roles={['vendedor', 'cajero', 'encargado']} viewKey="tables"><TablesBoard /></ProtectedRoute>} />
         <Route path="/tables/:id/edit" element={<ProtectedRoute roles={['vendedor', 'cajero', 'encargado']} viewKey="tables"><TableEditor /></ProtectedRoute>} />
         <Route path="/cashier" element={<ProtectedRoute roles={['cajero', 'encargado']} viewKey="cashier"><CashierQueue /></ProtectedRoute>} />
@@ -67,11 +70,11 @@ function AppRoutes() {
         <Route path="/purchase-orders" element={<ProtectedRoute roles={['encargado', 'dueno']}><PurchaseOrdersPage /></ProtectedRoute>} />
         <Route path="/reports/income-statement" element={<ProtectedRoute roles={['dueno']}><IncomeStatementPage /></ProtectedRoute>} />
         <Route path="/reports/sales-by-category" element={<ProtectedRoute roles={['dueno']}><SalesByCategoryPage /></ProtectedRoute>} />
-        <Route path="/clients/balance" element={<ProtectedRoute roles={['encargado', 'dueno']}><ClientBalancePage /></ProtectedRoute>} />
+        <Route path="/clients/balance" element={<ProtectedRoute roles={['dueno']}><ClientBalancePage /></ProtectedRoute>} />
         <Route path="/credit-notes" element={<ProtectedRoute roles={['cajero', 'encargado', 'dueno']}><CreditNotesPage /></ProtectedRoute>} />
         <Route path="/export-history" element={<ProtectedRoute roles={['dueno']}><ExportHistoryPage /></ProtectedRoute>} />
         <Route path="/fiscal/receipts" element={<ProtectedRoute roles={['cajero', 'encargado', 'dueno']}><FiscalReceiptsPage /></ProtectedRoute>} />
-        <Route path="/tax-withholdings" element={<ProtectedRoute roles={['encargado', 'dueno']}><TaxWithholdingsPage /></ProtectedRoute>} />
+        <Route path="/tax-withholdings" element={<ProtectedRoute roles={['dueno']}><TaxWithholdingsPage /></ProtectedRoute>} />
         <Route path="/my-commissions" element={<ProtectedRoute roles={['vendedor', 'encargado']} viewKey="commissions"><CommissionHistory /></ProtectedRoute>} />
         <Route path="/prices" element={<ProtectedRoute viewKey="prices"><PriceList /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -233,9 +233,14 @@ export default function Navbar() {
     const close = mobile ? () => setMenuOpen(false) : undefined;
     return (
       <>
-        {hasRole('vendedor', 'cajero', 'encargado') && canSeeView('tables') && (
+        {hasRole('vendedor', 'cajero') && (
+          <NavLink to="/mis-ventas" className={cls} onClick={close}>
+            {({ isActive }) => (<><IconVentas active={isActive} />Ventas</>)}
+          </NavLink>
+        )}
+        {hasRole('encargado') && canSeeView('tables') && (
           <NavLink to="/tables" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconTickets active={isActive} />Tickets</>)}
+            {({ isActive }) => (<><IconTickets active={isActive} />Ventas</>)}
           </NavLink>
         )}
         {canSeeCaja && (
@@ -260,7 +265,7 @@ export default function Navbar() {
             {({ isActive }) => (<><IconStock active={isActive} />Stock</>)}
           </NavLink>
         )}
-        {canSeeView('sales') && user?.branch_id && (
+        {canSeeView('sales') && user?.branch_id && !hasRole('vendedor') && (
           <NavLink to="/sales" className={cls} onClick={close}>
             {({ isActive }) => (<><IconVentas active={isActive} />Ventas</>)}
           </NavLink>
@@ -310,11 +315,6 @@ export default function Navbar() {
             {({ isActive }) => (<><IconSucursales active={isActive} />Sucursales</>)}
           </NavLink>
         )}
-        {hasRole('encargado', 'dueno') && (
-          <NavLink to="/clients/balance" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconCuentasCorrientes active={isActive} />Cuentas corrientes</>)}
-          </NavLink>
-        )}
         {hasRole('dueno') && (
           <NavLink to="/gastos" className={cls} onClick={close}>
             {({ isActive }) => (<><IconGastos active={isActive} />Gastos</>)}
@@ -337,7 +337,7 @@ export default function Navbar() {
         )}
         {hasRole('cajero', 'encargado', 'dueno') && (
           <NavLink to="/credit-notes" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconNotasCD active={isActive} />Notas C/D</>)}
+            {({ isActive }) => (<><IconNotasCD active={isActive} />N. Crédito</>)}
           </NavLink>
         )}
         {hasRole('dueno') && (
@@ -350,7 +350,7 @@ export default function Navbar() {
             {({ isActive }) => (<><IconFiscal active={isActive} />Fiscal</>)}
           </NavLink>
         )}
-        {hasRole('encargado', 'dueno') && (
+        {hasRole('dueno') && (
           <NavLink to="/tax-withholdings" className={cls} onClick={close}>
             {({ isActive }) => (<><IconRetenciones active={isActive} />Retenciones</>)}
           </NavLink>

@@ -601,7 +601,7 @@ export default function TablesBoard() {
   const finalTotal   = Math.max(0, cartTotal - discAmt) + serviceDeposit;
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Cargando tickets...</div>;
+    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Cargando ventas...</div>;
   }
 
   return (
@@ -613,7 +613,7 @@ export default function TablesBoard() {
 
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-800 to-blue-600 px-4 py-3">
-          <span className="text-white font-bold text-base tracking-tight">Tickets</span>
+          <span className="text-white font-bold text-base tracking-tight">Ventas</span>
         </div>
 
         {/* Buscador de precios */}
@@ -715,7 +715,7 @@ export default function TablesBoard() {
               <button onClick={closePanel} className="text-slate-300 hover:text-white text-xl leading-none">
                 &larr;
               </button>
-              <h2 className="text-xl font-bold">TICKET #{selectedNumber}</h2>
+              <h2 className="text-xl font-bold">VENTA #{selectedNumber}</h2>
               {panelTicket && (
                 <span className="text-xs px-2.5 py-1 rounded-full bg-white/20 font-semibold">
                   {STATUS_LABELS[panelTicket.status]}
@@ -727,7 +727,7 @@ export default function TablesBoard() {
                 onClick={handleDelete}
                 className="text-sm text-red-300 hover:text-red-100 border border-red-400/30 px-3 py-1 rounded-lg"
               >
-                Eliminar ticket
+                Eliminar venta
               </button>
             )}
           </div>
@@ -741,7 +741,7 @@ export default function TablesBoard() {
                   {panelTicket.status === 'cancelled' ? '🚫' : '✅'}
                 </div>
                 <p className="font-semibold text-slate-700 text-lg">
-                  Ticket {panelTicket.status === 'cancelled' ? 'cancelado' : 'completado'}
+                  Venta {panelTicket.status === 'cancelled' ? 'cancelada' : 'completada'}
                 </p>
                 <p className="text-slate-400 text-sm text-center max-w-xs">
                   Este número está libre para usarse de nuevo. Eliminá el registro para dejarlo disponible.
@@ -751,7 +751,7 @@ export default function TablesBoard() {
                     onClick={handleDelete}
                     className="bg-gradient-to-r from-blue-600 to-cyan-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:from-blue-700 hover:to-cyan-600 transition-all shadow-sm"
                   >
-                    Liberar ticket #{selectedNumber}
+                    Liberar venta #{selectedNumber}
                   </button>
                 )}
               </div>
@@ -964,7 +964,7 @@ export default function TablesBoard() {
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     rows={2}
-                    placeholder="Observaciones del ticket..."
+                    placeholder="Observaciones de la venta..."
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   />
                 </div>
@@ -1067,7 +1067,7 @@ export default function TablesBoard() {
                   disabled={saving}
                   className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-500 text-white py-2.5 rounded-lg text-sm font-semibold hover:from-blue-700 hover:to-cyan-600 disabled:opacity-50 transition-all shadow-sm"
                 >
-                  {saving ? 'Guardando...' : panelTicket ? 'Guardar cambios' : 'Abrir ticket'}
+                  {saving ? 'Guardando...' : panelTicket ? 'Guardar cambios' : 'Abrir venta'}
                 </button>
                 {panelTicket && panelTicket.status === 'open' && hasRole('vendedor', 'encargado', 'dueno') && (
                   <button
@@ -1096,7 +1096,7 @@ export default function TablesBoard() {
                 <circle cx="17" cy="17" r="1" fill="currentColor" stroke="none"/>
               </svg>
             </div>
-            <p className="text-slate-500 font-medium">Selecciona un ticket</p>
+            <p className="text-slate-500 font-medium">Selecciona una venta</p>
             <p className="text-slate-400 text-sm mt-1">Haz clic en un número del panel izquierdo</p>
           </div>
         </div>
@@ -1114,7 +1114,7 @@ export default function TablesBoard() {
                 </svg>
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-800">¿Eliminar ticket #{selectedNumber}?</h3>
+                <h3 className="text-base font-bold text-slate-800">¿Eliminar venta #{selectedNumber}?</h3>
                 <p className="text-sm text-slate-500 mt-0.5">Esta acción no se puede deshacer.</p>
               </div>
             </div>

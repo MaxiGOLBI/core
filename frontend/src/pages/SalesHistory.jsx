@@ -29,8 +29,8 @@ export default function SalesHistory({ branchId } = {}) {
   const [paymentMethods, setPaymentMethods] = useState([]);
 
   // ── Credit note modal state ───────────────────────────────
-  const [ncModal, setNcModal]   = useState(null); // { sale_id, client_id, amount }
-  const [ncForm, setNcForm]     = useState({ reason: '', notes: '', number: '' });
+  const [ncModal, setNcModal]   = useState(null); // { sale_id, amount }
+  const [ncForm, setNcForm]     = useState({ client_name: '', dni: '', reason: '', notes: '' });
   const [ncSaving, setNcSaving] = useState(false);
   const [ncError, setNcError]   = useState('');
 
@@ -190,9 +190,14 @@ export default function SalesHistory({ branchId } = {}) {
 
   async function handleGenerateNC(e, sale) {
     e.stopPropagation();
-    setNcForm({ reason: '', notes: '', number: '' });
+    setNcForm({
+      client_name: sale.clients?.name ?? '',
+      dni:         '',
+      reason:      '',
+      notes:       '',
+    });
     setNcError('');
-    setNcModal({ sale_id: sale.id, client_id: sale.client_id ?? sale.clients?.id ?? null, amount: parseFloat(sale.total) });
+    setNcModal({ sale_id: sale.id, amount: parseFloat(sale.total) });
   }
 
   async function handleNcSubmit(e) {
@@ -201,16 +206,15 @@ export default function SalesHistory({ branchId } = {}) {
     setNcSaving(true);
     try {
       await api.post('/api/credit-notes', {
-        sale_id:   ncModal.sale_id,
-        client_id: ncModal.client_id || undefined,
-        type:      'credito',
-        amount:    ncModal.amount,
-        reason:    ncForm.reason,
-        notes:     ncForm.notes,
-        number:    ncForm.number,
+        client_name: ncForm.client_name,
+        dni:         ncForm.dni,
+        amount:      ncModal.amount,
+        reason:      ncForm.reason,
+        notes:       ncForm.notes,
       });
+      await api.post(`/api/sales/${ncModal.sale_id}/cancel`, {});
       setNcModal(null);
-      showToast('Nota de crédito creada', 'success');
+      showToast('Nota de crédito creada y venta cancelada', 'success');
     } catch (err) {
       setNcError(err.message || 'Error al crear la nota de crédito.');
     } finally {
@@ -674,37 +678,50 @@ export default function SalesHistory({ branchId } = {}) {
           onClick={e => { if (e.target === e.currentTarget) setNcModal(null); }}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-900 to-blue-700 rounded-t-2xl flex items-center justify-between">
-              <h3 className="font-bold text-white text-base">Generar Nota de Crédito</h3>
+              <h3 className="font-bold text-white text-base">Nueva nota de crédito</h3>
               <button onClick={() => setNcModal(null)} className="text-white/70 hover:text-white text-xl leading-none">&times;</button>
             </div>
             <form onSubmit={handleNcSubmit} className="p-5 space-y-4">
               {ncError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-sm">{ncError}</div>
               )}
-              <div className="bg-slate-50 rounded-lg px-4 py-2.5 text-sm text-slate-700">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5 text-sm text-emerald-800">
                 <span className="font-medium">Monto:</span> ${parseFloat(ncModal.amount).toFixed(2)}
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">N&#xBA; de nota</label>
-                <input type="text" value={ncForm.number}
-                  onChange={e => setNcForm(f => ({ ...f, number: e.target.value }))}
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Nombre del cliente <span className="text-red-500">*</span></label>
+                <input type="text" required value={ncForm.client_name}
+                  onChange={e => setNcForm(f => ({ ...f, client_name: e.target.value }))}
                   className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="NC-001" maxLength={50} />
+                  placeholder="Ej: Juan Pérez" maxLength={150} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Motivo</label>
-                <input type="text" value={ncForm.reason}
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">DNI <span className="text-red-500">*</span></label>
+                <input type="text" required value={ncForm.dni}
+                  onChange={e => setNcForm(f => ({ ...f, dni: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ej: 30123456" maxLength={20} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Motivo <span className="text-red-500">*</span></label>
+                <input type="text" required value={ncForm.reason}
                   onChange={e => setNcForm(f => ({ ...f, reason: e.target.value }))}
                   className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Ej: Devolución de mercadería" maxLength={200} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Notas internas</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Nota interna <span className="text-slate-400 font-normal">(opcional)</span></label>
                 <textarea rows={2} value={ncForm.notes}
                   onChange={e => setNcForm(f => ({ ...f, notes: e.target.value }))}
                   className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  placeholder="Opcional..." maxLength={500} />
+                  placeholder="Uso interno..." maxLength={500} />
               </div>
+              <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                El número de nota (NC-XXXX) es asignado automáticamente.
+              </p>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setNcModal(null)} disabled={ncSaving}
                   className="flex-1 border border-slate-300 text-slate-700 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors">

@@ -6,16 +6,16 @@ const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = Router();
 const CASHIER_ROLES = ['cajero', 'encargado', 'dueno'];
-const MANAGER = requireRole('encargado', 'dueno');
 
 // ── GET /api/credit-notes — list with filters ─────────────────
 router.get('/', authenticate, requireRole(...CASHIER_ROLES), async (req, res) => {
-  const { type, status, client_id, from, to } = req.query;
+  const { status, from, to } = req.query;
 
   let query = supabase
     .from('credit_notes')
-    .select('*, clients(name), sales(date, total)')
+    .select('*')
     .eq('company_id', req.user.company_id)
+    .eq('type', 'credito')
     .order('created_at', { ascending: false });
 
   if (req.user.role !== 'dueno') {
@@ -24,61 +24,54 @@ router.get('/', authenticate, requireRole(...CASHIER_ROLES), async (req, res) =>
     query = query.eq('branch_id', req.query.branch_id);
   }
 
-  if (type)      query = query.eq('type', type);
-  if (status)    query = query.eq('status', status);
-  if (client_id) query = query.eq('client_id', client_id);
-  if (from)      query = query.gte('created_at', from);
-  if (to)        query = query.lte('created_at', to + 'T23:59:59Z');
+  if (status) query = query.eq('status', status);
+  if (from)   query = query.gte('created_at', from);
+  if (to)     query = query.lte('created_at', to + 'T23:59:59Z');
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
-
-  res.json((data ?? []).map((cn) => ({
-    ...cn,
-    client_name: cn.clients?.name ?? null,
-    sale_date:   cn.sales?.date   ?? null,
-    sale_total:  cn.sales?.total  ?? null,
-  })));
+  res.json(data ?? []);
 });
 
-// ── GET /api/credit-notes/:id ────────────────────────────────
-router.get('/:id', authenticate, requireRole(...CASHIER_ROLES), async (req, res) => {
-  const { data, error } = await supabase
-    .from('credit_notes')
-    .select('*, clients(id, name), sales(id, date, total, details_json)')
-    .eq('id', req.params.id)
-    .eq('company_id', req.user.company_id)
-    .single();
+// ── POST /api/credit-notes — create ──────────────────────────
+router.post('/', authenticate, requireRole(...CASHIER_ROLES), async (req, res) => {
+  const { client_name, dni, amount, reason, notes } = req.body;
 
-  if (error || !data) return res.status(404).json({ error: 'Nota no encontrada' });
-  res.json(data);
-});
-
-// ── POST /api/credit-notes — create manually ─────────────────
-// Used for debit notes or credit notes not linked to a sale cancellation
-router.post('/', authenticate, MANAGER, async (req, res) => {
-  const { client_id, sale_id, type, amount, reason, notes, number } = req.body;
-
+  if (!client_name?.trim()) {
+    return res.status(400).json({ error: 'El nombre del cliente es requerido' });
+  }
+  if (!dni?.trim()) {
+    return res.status(400).json({ error: 'El DNI es requerido' });
+  }
   if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-    return res.status(400).json({ error: 'amount es requerido y debe ser mayor a 0' });
+    return res.status(400).json({ error: 'El monto debe ser mayor a 0' });
   }
-  if (!['credito', 'debito'].includes(type)) {
-    return res.status(400).json({ error: 'type debe ser credito o debito' });
+  if (!reason?.trim()) {
+    return res.status(400).json({ error: 'El motivo es requerido' });
   }
+
+  // Auto-generate sequential number per company
+  const { count } = await supabase
+    .from('credit_notes')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', req.user.company_id)
+    .eq('type', 'credito');
+
+  const number = `NC-${String((count ?? 0) + 1).padStart(4, '0')}`;
 
   const { data, error } = await supabase
     .from('credit_notes')
     .insert([{
-      company_id: req.user.company_id,
-      branch_id:  req.user.branch_id,
-      client_id:  client_id  || null,
-      sale_id:    sale_id    || null,
-      type:       type,
-      amount:     parseFloat(amount),
-      reason:     (reason || '').trim(),
-      notes:      (notes  || '').trim(),
-      number:     (number || '').trim() || null,
-      status:     'pending',
+      company_id:  req.user.company_id,
+      branch_id:   req.user.branch_id,
+      client_name: client_name.trim(),
+      dni:         dni.trim(),
+      type:        'credito',
+      amount:      parseFloat(amount),
+      reason:      reason.trim(),
+      notes:       (notes || '').trim(),
+      number,
+      status:      'pending',
     }])
     .select()
     .single();
@@ -87,9 +80,9 @@ router.post('/', authenticate, MANAGER, async (req, res) => {
   res.status(201).json(data);
 });
 
-// ── PATCH /api/credit-notes/:id — update status or fields ────
-router.patch('/:id', authenticate, MANAGER, async (req, res) => {
-  const { status, reason, notes, number } = req.body;
+// ── PATCH /api/credit-notes/:id — update status ──────────────
+router.patch('/:id', authenticate, requireRole(...CASHIER_ROLES), async (req, res) => {
+  const { status } = req.body;
 
   const { data: cn } = await supabase
     .from('credit_notes')
@@ -99,32 +92,24 @@ router.patch('/:id', authenticate, MANAGER, async (req, res) => {
     .single();
 
   if (!cn) return res.status(404).json({ error: 'Nota no encontrada' });
-
-  const updates = {};
-  if (status && ['pending', 'used'].includes(status)) updates.status = status;
-  if (reason  !== undefined) updates.reason = reason.trim();
-  if (notes   !== undefined) updates.notes  = notes.trim();
-  if (number  !== undefined) updates.number = number?.trim() || null;
-
-  if (Object.keys(updates).length === 0) {
-    return res.status(400).json({ error: 'No hay campos para actualizar' });
+  if (!status || !['pending', 'used'].includes(status)) {
+    return res.status(400).json({ error: 'status debe ser pending o used' });
   }
 
   const { data, error } = await supabase
     .from('credit_notes')
-    .update(updates)
+    .update({ status })
     .eq('id', req.params.id)
     .eq('company_id', req.user.company_id)
-    .select('*, clients(name)')
+    .select()
     .maybeSingle();
 
   if (error) return res.status(500).json({ error: error.message });
-  if (!data) return res.status(404).json({ error: 'Nota no encontrada' });
   res.json(data);
 });
 
 // ── DELETE /api/credit-notes/:id — only pending notes ────────
-router.delete('/:id', authenticate, MANAGER, async (req, res) => {
+router.delete('/:id', authenticate, requireRole(...CASHIER_ROLES), async (req, res) => {
   const { data: cn } = await supabase
     .from('credit_notes')
     .select('id, status')

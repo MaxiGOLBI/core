@@ -69,7 +69,7 @@ export default function CashierQueue() {
         <div className="absolute top-4 right-48 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
         <div className="relative">
           <h1 className="text-2xl font-bold text-white">Cola de Caja</h1>
-          <p className="text-blue-100 text-sm mt-1">Tickets confirmados esperando cobro</p>
+          <p className="text-blue-100 text-sm mt-1">Ventas confirmadas esperando cobro</p>
         </div>
       </div>
 
@@ -83,8 +83,8 @@ export default function CashierQueue() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 3" />
             </svg>
           </div>
-          <p className="text-slate-500 font-medium">No hay tickets en cola</p>
-          <p className="text-slate-400 text-sm mt-1">Los tickets confirmados aparecerán aquí en tiempo real.</p>
+          <p className="text-slate-500 font-medium">No hay ventas en cola</p>
+          <p className="text-slate-400 text-sm mt-1">Las ventas confirmadas aparecerán aquí en tiempo real.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
@@ -119,7 +119,7 @@ export default function CashierQueue() {
               <div key={table.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between bg-gradient-to-r from-blue-700 to-cyan-500 px-5 py-3">
                   <div className="flex items-center gap-3">
-                    <span className="text-white font-bold text-base">Ticket: {table.table_number}</span>
+                    <span className="text-white font-bold text-base">Venta #{table.table_number}</span>
                     {table.service_data && (
                       <span className="bg-violet-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
                         🔧 Servicio Técnico
@@ -270,8 +270,8 @@ export default function CashierQueue() {
                 </svg>
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-800">¿Cancelar este ticket?</h3>
-                <p className="text-sm text-slate-500 mt-0.5">El ticket volverá al estado cancelado.</p>
+                <h3 className="text-base font-bold text-slate-800">¿Cancelar esta venta?</h3>
+                <p className="text-sm text-slate-500 mt-0.5">La venta volverá al estado cancelado.</p>
               </div>
             </div>
           </div>
