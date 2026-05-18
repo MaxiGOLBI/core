@@ -27,6 +27,7 @@ import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
 import IncomeStatementPage from './pages/IncomeStatementPage';
 import SalesByCategoryPage from './pages/SalesByCategoryPage';
 import NetProfitByPaymentPage from './pages/NetProfitByPaymentPage';
+import MetricasPage from './pages/MetricasPage';
 import ClientBalancePage from './pages/ClientBalancePage';
 import CreditNotesPage from './pages/CreditNotesPage';
 import ExportHistoryPage from './pages/ExportHistoryPage';
@@ -74,6 +75,7 @@ function AppRoutes() {
         <Route path="/cash/flow" element={<ProtectedRoute roles={['dueno']}><CashFlowPage /></ProtectedRoute>} />
         <Route path="/suppliers" element={<ProtectedRoute roles={['encargado', 'dueno']}><SuppliersPage /></ProtectedRoute>} />
         <Route path="/purchase-orders" element={<ProtectedRoute roles={['encargado', 'dueno']}><PurchaseOrdersPage /></ProtectedRoute>} />
+        <Route path="/metricas" element={<ProtectedRoute roles={['dueno']}><MetricasPage /></ProtectedRoute>} />
         <Route path="/reports/income-statement" element={<ProtectedRoute roles={['dueno']}><IncomeStatementPage /></ProtectedRoute>} />
         <Route path="/reports/sales-by-category" element={<ProtectedRoute roles={['dueno']}><SalesByCategoryPage /></ProtectedRoute>} />
         <Route path="/reports/net-profit-by-payment" element={<ProtectedRoute roles={['dueno']}><NetProfitByPaymentPage /></ProtectedRoute>} />

@@ -298,8 +298,8 @@ export default function Navbar() {
           </NavLink>
         )}
         {hasRole('dueno') && (
-          <NavLink to="/cash/flow" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconFlujoCaja active={isActive} />Flujo Caja</>)}
+          <NavLink to="/metricas" className={cls} onClick={close}>
+            {({ isActive }) => (<><IconEstadoResultados active={isActive} />Métricas</>)}
           </NavLink>
         )}
         {hasRole('dueno') && (
@@ -310,21 +310,6 @@ export default function Navbar() {
         {hasRole('dueno') && (
           <NavLink to="/gastos" className={cls} onClick={close}>
             {({ isActive }) => (<><IconGastos active={isActive} />Gastos</>)}
-          </NavLink>
-        )}
-        {hasRole('dueno') && (
-          <NavLink to="/reports/income-statement" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconEstadoResultados active={isActive} />Resultados</>)}
-          </NavLink>
-        )}
-        {hasRole('dueno') && (
-          <NavLink to="/reports/sales-by-category" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconVentasPorRubro active={isActive} />Ventas Rubro</>)}
-          </NavLink>
-        )}
-        {hasRole('dueno') && (
-          <NavLink to="/reports/net-profit-by-payment" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconGananciaNet active={isActive} />Ganancia Neta</>)}
           </NavLink>
         )}
         {hasRole('dueno') && (
@@ -401,7 +386,7 @@ export default function Navbar() {
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
+              <div className="absolute right-0 top-full mt-2 w-52 max-w-[calc(100vw-1rem)] bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
                 {hasRole('vendedor', 'encargado') && (
                   <NavLink
                     to="/my-commissions"

@@ -845,8 +845,9 @@ export default function VendorSalesPage() {
 
   return (
     <div className="flex h-[calc(100vh-56px)]">
-      {/* ── Left panel ── */}
-      <div className="w-[300px] flex-shrink-0 border-r border-gray-200 flex flex-col bg-white">
+      {/* ── Left panel: full-width on mobile, 300px sidebar on md+ ── */}
+      <div className={`flex-shrink-0 border-r border-gray-200 flex flex-col bg-white
+        ${mode === 'idle' ? 'flex w-full md:w-[300px]' : 'hidden md:flex md:w-[300px]'}`}>
         <div className="px-4 py-3 bg-blue-900 border-b border-blue-800">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-bold text-white text-base">Mis ventas</h2>
@@ -903,8 +904,8 @@ export default function VendorSalesPage() {
         </div>
       </div>
 
-      {/* ── Right panel ── */}
-      <div className="flex-1 overflow-hidden">
+      {/* ── Right panel: hidden on mobile when idle, full-width when active ── */}
+      <div className={`overflow-hidden ${mode === 'idle' ? 'hidden md:flex md:flex-1' : 'flex flex-1'}`}>
         {(mode === 'new' || mode === 'edit') && (
           <SaleForm
             key={formKey.current}

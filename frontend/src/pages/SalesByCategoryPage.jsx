@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 
 // ── Constants ─────────────────────────────────────────────────
@@ -36,6 +36,163 @@ function fmtDate(str) {
   if (!str) return '—';
   const [y, m, d] = str.split('-');
   return `${d}/${m}/${y}`;
+}
+
+// ── Paleta de colores ─────────────────────────────────────────
+const PALETTE = [
+  '#6366f1','#22d3ee','#10b981','#f59e0b','#ec4899',
+  '#8b5cf6','#f97316','#3b82f6','#84cc16','#ef4444',
+];
+
+function fmtShort(n) {
+  const v = parseFloat(n) || 0;
+  if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
+  if (v >= 1000)    return `$${(v / 1000).toFixed(0)}k`;
+  return `$${v.toFixed(0)}`;
+}
+
+// ── Gráfico comparativo ────────────────────────────────────────
+function CategoryChart({ categories, grandTotal }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  if (!categories || categories.length === 0) return null;
+
+  const cats    = categories.slice(0, 10); // máximo 10
+  const maxVal  = cats[0]?.total || 1;
+  const R       = 72;
+  const CX      = 90;
+  const CY      = 90;
+  const CIRC    = 2 * Math.PI * R;
+
+  // Build donut segments
+  let cumPct = 0;
+  const segments = cats.map((cat, i) => {
+    const pct    = (cat.total / (grandTotal || 1));
+    const arcLen = pct * CIRC;
+    const offset = CIRC - cumPct * CIRC;
+    cumPct += pct;
+    return { cat, pct, arcLen, offset, color: PALETTE[i % PALETTE.length] };
+  });
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden shadow-2xl mb-6"
+      style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 55%, #0c1a3a 100%)' }}
+    >
+      <div className="px-6 pt-5 pb-2">
+        <h3 className="text-white font-bold text-lg tracking-tight">Ingresos por Rubro</h3>
+        <p className="text-slate-400 text-xs mt-0.5">Comparativa de ventas por categoría en el período</p>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6 px-6 pb-6 pt-2">
+
+        {/* ── Donut chart ── */}
+        <div className="flex-shrink-0 flex flex-col items-center justify-center">
+          <svg width="180" height="180" viewBox="0 0 180 180" className="overflow-visible">
+            {/* Track ring */}
+            <circle cx={CX} cy={CY} r={R} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="22" />
+
+            {/* Segments */}
+            {segments.map((seg, i) => (
+              <circle
+                key={i}
+                cx={CX} cy={CY} r={R}
+                fill="none"
+                stroke={seg.color}
+                strokeWidth={hoverIdx === i ? 26 : 22}
+                strokeDasharray={`${seg.arcLen} ${CIRC}`}
+                strokeDashoffset={seg.offset}
+                strokeLinecap="butt"
+                style={{
+                  transform: `rotate(-90deg)`,
+                  transformOrigin: `${CX}px ${CY}px`,
+                  transition: 'stroke-width 0.15s ease',
+                  filter: hoverIdx === i ? `drop-shadow(0 0 8px ${seg.color})` : undefined,
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)}
+              />
+            ))}
+
+            {/* Center: hovered or total */}
+            {hoverIdx !== null ? (
+              <>
+                <text x={CX} y={CY - 10} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.5)">
+                  {(segments[hoverIdx].cat.category_name || 'Sin cat.').slice(0, 14)}
+                </text>
+                <text x={CX} y={CY + 6} textAnchor="middle" fontSize="14" fontWeight="bold" fill="white">
+                  {fmtShort(segments[hoverIdx].cat.total)}
+                </text>
+                <text x={CX} y={CY + 22} textAnchor="middle" fontSize="11" fill={segments[hoverIdx].color}>
+                  {parseFloat(segments[hoverIdx].cat.share_pct ?? 0).toFixed(1)}%
+                </text>
+              </>
+            ) : (
+              <>
+                <text x={CX} y={CY - 6} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.4)">
+                  Total
+                </text>
+                <text x={CX} y={CY + 10} textAnchor="middle" fontSize="14" fontWeight="bold" fill="white">
+                  {fmtShort(grandTotal)}
+                </text>
+              </>
+            )}
+          </svg>
+        </div>
+
+        {/* ── Horizontal bars ── */}
+        <div className="flex-1 flex flex-col gap-2.5 justify-center">
+          {cats.map((cat, i) => {
+            const color   = PALETTE[i % PALETTE.length];
+            const barPct  = ((cat.total / maxVal) * 100).toFixed(1);
+            const isHover = hoverIdx === i;
+            return (
+              <div
+                key={cat.category_id ?? i}
+                className="group cursor-default"
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)}
+              >
+                {/* Label row */}
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: color, boxShadow: isHover ? `0 0 8px ${color}` : undefined }}
+                    />
+                    <span className="text-xs font-medium text-slate-300 truncate max-w-[160px]">
+                      {cat.category_name || 'Sin categoría'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="text-xs text-slate-500">{(cat.units ?? 0)} u.</span>
+                    <span className="text-xs font-bold text-white">{fmtShort(cat.total)}</span>
+                    <span
+                      className="text-xs font-semibold w-10 text-right"
+                      style={{ color }}
+                    >
+                      {parseFloat(cat.share_pct ?? 0).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                {/* Bar */}
+                <div className="h-2 rounded-full overflow-hidden bg-white/5">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${barPct}%`,
+                      backgroundColor: color,
+                      boxShadow: isHover ? `0 0 10px ${color}` : undefined,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Main page ─────────────────────────────────────────────────
@@ -155,6 +312,11 @@ export default function SalesByCategoryPage() {
               {topCategory && <p className="text-xs text-slate-400 mt-0.5">{fmtMoney(topCategory.total)}</p>}
             </div>
           </div>
+
+          {/* Comparative chart */}
+          {data.categories?.length > 0 && (
+            <CategoryChart categories={data.categories} grandTotal={data.grand_total} />
+          )}
 
           {/* Table */}
           {data.categories?.length === 0 ? (

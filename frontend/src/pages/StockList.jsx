@@ -39,7 +39,7 @@ function ProductForm({ title, data, setData, onSubmit, onCancel, error, branches
           <button type="button" onClick={onCancel} className="text-white/70 hover:text-white transition-colors text-xl leading-none">&times;</button>
         </div>
         <form onSubmit={onSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             {isDueno && !branchIdProp && (
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Sucursal</label>

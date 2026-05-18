@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -39,6 +39,238 @@ function fmtDate(str) {
   return `${d}/${m}/${y}`;
 }
 
+// ── Gráfico de área premium ────────────────────────────────────
+function WaveChart({ byDate }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const svgRef = useRef(null);
+
+  if (!byDate || byDate.length === 0) return null;
+
+  const W   = 900;
+  const H   = 260;
+  const PAD = { top: 30, right: 30, bottom: 44, left: 72 };
+  const cW  = W - PAD.left - PAD.right;
+  const cH  = H - PAD.top  - PAD.bottom;
+
+  const salesVals = byDate.map(d => d.sales || 0);
+  const netVals   = byDate.map(d => d.net   || 0);
+  const maxVal = Math.max(...salesVals, ...netVals, 1);
+  const minVal = Math.min(...netVals, 0);
+  const range  = maxVal - minVal || 1;
+  const n      = byDate.length;
+
+  const xPos = i => PAD.left + (i / Math.max(n - 1, 1)) * cW;
+  const yPos = v => PAD.top  + ((maxVal - v) / range) * cH;
+
+  function linePath(vals) {
+    if (!vals.length) return '';
+    let d = `M ${xPos(0)} ${yPos(vals[0])}`;
+    for (let i = 1; i < vals.length; i++) {
+      const cx = (xPos(i - 1) + xPos(i)) / 2;
+      d += ` C ${cx} ${yPos(vals[i - 1])} ${cx} ${yPos(vals[i])} ${xPos(i)} ${yPos(vals[i])}`;
+    }
+    return d;
+  }
+
+  function areaPath(vals) {
+    const base = Math.min(yPos(0), PAD.top + cH);
+    return `${linePath(vals)} L ${xPos(n - 1)} ${base} L ${xPos(0)} ${base} Z`;
+  }
+
+  const ticks = Array.from({ length: 5 }, (_, i) => {
+    const v = minVal + (range / 4) * i;
+    return { v, y: yPos(v) };
+  });
+
+  function fmtTick(v) {
+    const abs = Math.abs(v);
+    const sign = v < 0 ? '-' : '';
+    if (abs >= 1000000) return `${sign}${(abs / 1000000).toFixed(1)}M`;
+    if (abs >= 1000)    return `${sign}${(abs / 1000).toFixed(0)}k`;
+    return v.toFixed(0);
+  }
+
+  const step = Math.ceil(n / 9);
+
+  function handleMouseMove(e) {
+    const svg = svgRef.current;
+    if (!svg || n < 2) return;
+    const rect  = svg.getBoundingClientRect();
+    const mx    = ((e.clientX - rect.left) / rect.width) * W;
+    let best = 0, bestDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(xPos(i) - mx);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    setHoverIdx(best);
+  }
+
+  // Tooltip geometry
+  const tip = hoverIdx !== null ? byDate[hoverIdx] : null;
+  const tipX = tip ? Math.min(Math.max(xPos(hoverIdx), PAD.left + 68), W - PAD.right - 68) : 0;
+  const tipY = PAD.top + 4;
+  const tipW = 136;
+  const tipH = 72;
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden shadow-2xl"
+      style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0c1a3a 100%)' }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 pt-5 pb-2">
+        <div>
+          <h3 className="text-white font-bold text-lg tracking-tight">Evolución del período</h3>
+          <p className="text-slate-400 text-xs mt-0.5">Ventas y resultado neto por día</p>
+        </div>
+        <div className="flex items-center gap-6 text-xs">
+          <span className="flex items-center gap-2 text-slate-300">
+            <span className="inline-flex items-center gap-1">
+              <span className="w-5 h-0.5 rounded bg-cyan-400 opacity-90" />
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+            </span>
+            Ventas
+          </span>
+          <span className="flex items-center gap-2 text-slate-300">
+            <span className="inline-flex items-center gap-1">
+              <span className="w-5 h-0.5 rounded bg-violet-400 opacity-90" />
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+            </span>
+            Neto diario
+          </span>
+        </div>
+      </div>
+
+      {/* SVG */}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full cursor-crosshair select-none"
+        style={{ height: 270 }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        <defs>
+          {/* Gradient fills */}
+          <linearGradient id="cfGS" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#22d3ee" stopOpacity="0.45" />
+            <stop offset="75%"  stopColor="#22d3ee" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="cfGN" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#a78bfa" stopOpacity="0.40" />
+            <stop offset="75%"  stopColor="#a78bfa" stopOpacity="0.07" />
+            <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
+          </linearGradient>
+          {/* Glow filters */}
+          <filter id="cfGlowC" x="-20%" y="-100%" width="140%" height="300%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="cfGlowV" x="-20%" y="-100%" width="140%" height="300%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+
+        {/* Horizontal grid */}
+        {ticks.map(({ v, y }, i) => (
+          <g key={i}>
+            <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y}
+              stroke="white"
+              strokeOpacity={v === 0 ? 0.25 : 0.07}
+              strokeWidth={v === 0 ? 1.5 : 1}
+              strokeDasharray={v === 0 && minVal < 0 ? '5 4' : undefined}
+            />
+            <text x={PAD.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="rgba(255,255,255,0.35)" fontFamily="system-ui">
+              {fmtTick(v)}
+            </text>
+          </g>
+        ))}
+
+        {/* Hover vertical line */}
+        {hoverIdx !== null && (
+          <line
+            x1={xPos(hoverIdx)} y1={PAD.top}
+            x2={xPos(hoverIdx)} y2={H - PAD.bottom}
+            stroke="white" strokeOpacity="0.25" strokeWidth="1" strokeDasharray="4 3"
+          />
+        )}
+
+        {/* Area fills */}
+        <path d={areaPath(salesVals)} fill="url(#cfGS)" />
+        <path d={areaPath(netVals)}   fill="url(#cfGN)" />
+
+        {/* Lines with glow */}
+        <path d={linePath(salesVals)} fill="none" stroke="#22d3ee" strokeWidth="2.5"
+          strokeLinecap="round" filter="url(#cfGlowC)" />
+        <path d={linePath(netVals)} fill="none" stroke="#a78bfa" strokeWidth="2.5"
+          strokeLinecap="round" filter="url(#cfGlowV)" />
+
+        {/* Dots — always show when few points, only hovered otherwise */}
+        {byDate.map((_, i) => {
+          const show = n <= 14 || hoverIdx === i;
+          if (!show) return null;
+          const r = hoverIdx === i ? 5.5 : 3.5;
+          return (
+            <g key={i}>
+              {hoverIdx === i && <>
+                <circle cx={xPos(i)} cy={yPos(salesVals[i])} r="10" fill="#22d3ee" fillOpacity="0.15" />
+                <circle cx={xPos(i)} cy={yPos(netVals[i])}   r="10" fill="#a78bfa" fillOpacity="0.15" />
+              </>}
+              <circle cx={xPos(i)} cy={yPos(salesVals[i])} r={r} fill="#0f172a" stroke="#22d3ee" strokeWidth="2" />
+              <circle cx={xPos(i)} cy={yPos(netVals[i])}   r={r} fill="#0f172a" stroke="#a78bfa" strokeWidth="2" />
+            </g>
+          );
+        })}
+
+        {/* X axis labels */}
+        {byDate.map((d, i) => {
+          if (n > 1 && i % step !== 0 && i !== n - 1) return null;
+          const [, m, day] = d.date.split('-');
+          return (
+            <text key={i} x={xPos(i)} y={H - 10} textAnchor="middle" fontSize="11"
+              fill="rgba(255,255,255,0.35)" fontFamily="system-ui">
+              {`${day}/${m}`}
+            </text>
+          );
+        })}
+
+        {/* Tooltip */}
+        {tip && (() => {
+          const [, tm, tday] = tip.date.split('-');
+          return (
+            <g>
+              <rect x={tipX - tipW / 2} y={tipY} width={tipW} height={tipH} rx="10"
+                fill="#1e293b" fillOpacity="0.97"
+                stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+              <text x={tipX} y={tipY + 17} textAnchor="middle" fontSize="11" fill="rgba(255,255,255,0.5)" fontFamily="system-ui">
+                {`${tday}/${tm}`}
+              </text>
+              {/* Sales row */}
+              <circle cx={tipX - tipW / 2 + 16} cy={tipY + 34} r="4" fill="#22d3ee" />
+              <text x={tipX - tipW / 2 + 26} y={tipY + 38} fontSize="11" fill="rgba(255,255,255,0.7)" fontFamily="system-ui">Ventas</text>
+              <text x={tipX + tipW / 2 - 8} y={tipY + 38} textAnchor="end" fontSize="12" fill="#22d3ee" fontWeight="bold" fontFamily="system-ui">
+                ${(tip.sales || 0).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+              </text>
+              {/* Net row */}
+              <circle cx={tipX - tipW / 2 + 16} cy={tipY + 54} r="4" fill="#a78bfa" />
+              <text x={tipX - tipW / 2 + 26} y={tipY + 58} fontSize="11" fill="rgba(255,255,255,0.7)" fontFamily="system-ui">Neto</text>
+              <text x={tipX + tipW / 2 - 8} y={tipY + 58} textAnchor="end" fontSize="12"
+                fill={tip.net >= 0 ? '#a78bfa' : '#f87171'} fontWeight="bold" fontFamily="system-ui">
+                {tip.net >= 0 ? '' : '−'}${Math.abs(tip.net || 0).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+              </text>
+            </g>
+          );
+        })()}
+      </svg>
+
+      {/* Bottom padding */}
+      <div className="h-3" />
+    </div>
+  );
+}
+
 // ── Tarjeta de resumen ─────────────────────────────────────────
 function SummaryCard({ label, amount, colorClass, subLabel }) {
   return (
@@ -58,6 +290,7 @@ export default function CashFlowPage() {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
+  const [tableOpen, setTableOpen] = useState(false);
 
   // Filters
   const [period, setPeriod]           = useState('mes');
@@ -201,27 +434,41 @@ export default function CashFlowPage() {
         </div>
       )}
 
-      {/* Tabla diaria */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-800">Detalle por día</h3>
-          {data && (
-            <span className="text-xs text-slate-400">
-              {data.from} → {data.to}
-            </span>
-          )}
-        </div>
+      {/* Gráfico de ola */}
+      {!loading && byDate.length > 0 && <WaveChart byDate={byDate} />}
 
-        {loading ? (
+      {/* Tabla diaria — desplegable */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <button
+          onClick={() => setTableOpen(o => !o)}
+          className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+        >
+          <h3 className="font-semibold text-slate-800">Detalle por día</h3>
+          <div className="flex items-center gap-3">
+            {data && (
+              <span className="text-xs text-slate-400">{data.from} → {data.to}</span>
+            )}
+            <svg
+              className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${tableOpen ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </button>
+
+        {tableOpen && loading && (
           <div className="flex justify-center items-center py-12">
             <div className="w-7 h-7 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : byDate.length === 0 ? (
+        )}
+        {tableOpen && !loading && byDate.length === 0 && (
           <p className="px-5 py-8 text-sm text-slate-400 text-center">
             No hay datos para el período seleccionado.
           </p>
-        ) : (
-          <div className="overflow-x-auto">
+        )}
+        {tableOpen && !loading && byDate.length > 0 && (
+          <div className="overflow-x-auto border-t border-slate-100">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">

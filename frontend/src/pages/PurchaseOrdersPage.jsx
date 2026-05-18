@@ -207,6 +207,7 @@ function OrderFormModal({ order, branches, suppliers, isDueno, onClose, onSaved 
                 className="text-xs font-semibold text-blue-600 hover:text-blue-800">+ Agregar ítem</button>
             </div>
             <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -262,6 +263,7 @@ function OrderFormModal({ order, branches, suppliers, isDueno, onClose, onSaved 
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
           </div>
 
@@ -314,6 +316,7 @@ function OrderDetailPanel({ order, onClose }) {
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Ítems</p>
             <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -343,6 +346,7 @@ function OrderDetailPanel({ order, onClose }) {
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
           </div>
         </div>

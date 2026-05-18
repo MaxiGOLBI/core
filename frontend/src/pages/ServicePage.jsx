@@ -77,7 +77,7 @@ function ServiceOrderModal({ order, employees, onClose, onSaved }) {
           {/* Datos del cliente */}
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Datos del cliente</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Nombre del cliente *</label>
                 <input value={form.client_name} onChange={f('client_name')} required placeholder="Ej: Juan Pérez"
@@ -121,7 +121,7 @@ function ServiceOrderModal({ order, employees, onClose, onSaved }) {
           {/* Montos */}
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Montos</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Precio total</label>
                 <input type="number" min="0" step="0.01" value={form.total_amount} onChange={f('total_amount')} placeholder="0.00"

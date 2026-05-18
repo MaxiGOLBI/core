@@ -258,7 +258,7 @@ export default function NetProfitByPaymentPage() {
       {/* Resumen (cards) */}
       {report && !loading && (
         <>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-5">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
                 Ingreso bruto total

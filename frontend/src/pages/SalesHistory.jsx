@@ -587,7 +587,7 @@ export default function SalesHistory({ branchId } = {}) {
                   <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-sm">{fiscalError}</div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Tipo</label>
                     <select value={fiscalForm.receipt_type}
