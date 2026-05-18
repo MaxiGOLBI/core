@@ -51,7 +51,7 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<DefaultPage />} />
-        <Route path="/mis-ventas" element={<ProtectedRoute roles={['vendedor', 'cajero']}><VendorSalesPage /></ProtectedRoute>} />
+        <Route path="/mis-ventas" element={<ProtectedRoute roles={['vendedor', 'cajero', 'encargado']}><VendorSalesPage /></ProtectedRoute>} />
         <Route path="/tables" element={<ProtectedRoute roles={['vendedor', 'cajero', 'encargado']} viewKey="tables"><TablesBoard /></ProtectedRoute>} />
         <Route path="/tables/:id/edit" element={<ProtectedRoute roles={['vendedor', 'cajero', 'encargado']} viewKey="tables"><TableEditor /></ProtectedRoute>} />
         <Route path="/cashier" element={<ProtectedRoute roles={['cajero', 'encargado']} viewKey="cashier"><CashierQueue /></ProtectedRoute>} />

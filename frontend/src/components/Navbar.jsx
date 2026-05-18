@@ -233,14 +233,9 @@ export default function Navbar() {
     const close = mobile ? () => setMenuOpen(false) : undefined;
     return (
       <>
-        {hasRole('vendedor', 'cajero') && (
+        {hasRole('vendedor', 'cajero', 'encargado') && (
           <NavLink to="/mis-ventas" className={cls} onClick={close}>
             {({ isActive }) => (<><IconVentas active={isActive} />Ventas</>)}
-          </NavLink>
-        )}
-        {hasRole('encargado') && canSeeView('tables') && (
-          <NavLink to="/tables" className={cls} onClick={close}>
-            {({ isActive }) => (<><IconTickets active={isActive} />Ventas</>)}
           </NavLink>
         )}
         {canSeeCaja && (
