@@ -12,7 +12,10 @@ const VALID_AGENCIES = ['AFIP', 'IIBB_BUENOS_AIRES', 'IIBB_CABA', 'IIBB_CORDOBA'
 
 // ── GET /api/tax-withholdings — list with filters ─────────────
 router.get('/', authenticate, MANAGER, async (req, res) => {
-  const { type, agency, sale_id, from, to } = req.query;
+  const {
+    type, agency, sale_id, from, to,
+    sufrida_emitida, tipo, certificate_number, proveedor_cliente, cuit, branch_id,
+  } = req.query;
 
   let query = supabase
     .from('tax_withholdings')
@@ -20,20 +23,30 @@ router.get('/', authenticate, MANAGER, async (req, res) => {
     .eq('company_id', req.user.company_id)
     .order('created_at', { ascending: false });
 
-  if (req.user.role !== 'dueno') query = query.eq('branch_id', req.user.branch_id);
-  if (type)    query = query.eq('type', type);
-  if (agency)  query = query.eq('agency', agency);
-  if (sale_id) query = query.eq('sale_id', sale_id);
-  if (from)    query = query.gte('created_at', from);
-  if (to)      query = query.lte('created_at', to + 'T23:59:59Z');
+  if (req.user.role !== 'dueno') {
+    query = query.eq('branch_id', req.user.branch_id);
+  } else if (branch_id) {
+    query = query.eq('branch_id', branch_id);
+  }
+
+  if (type)              query = query.eq('type', type);
+  if (agency)            query = query.eq('agency', agency);
+  if (sufrida_emitida)   query = query.eq('sufrida_emitida', sufrida_emitida);
+  if (tipo)              query = query.eq('tipo', tipo);
+  if (sale_id)           query = query.eq('sale_id', sale_id);
+  if (from)              query = query.gte('created_at', from);
+  if (to)                query = query.lte('created_at', to.includes('T') ? to : to + 'T23:59:59Z');
+  if (certificate_number) query = query.ilike('certificate_number', `%${certificate_number}%`);
+  if (proveedor_cliente)  query = query.ilike('proveedor_cliente', `%${proveedor_cliente}%`);
+  if (cuit)               query = query.ilike('cuit', `%${cuit}%`);
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
 
   res.json((data ?? []).map((w) => ({
     ...w,
-    sale_date:       w.sales?.date   ?? null,
-    created_by_name: w.users?.name   ?? null,
+    sale_date:       w.sales?.date ?? null,
+    created_by_name: w.users?.name ?? null,
   })));
 });
 
@@ -42,6 +55,7 @@ router.post('/', authenticate, MANAGER, async (req, res) => {
   const {
     type, agency, sale_id, fiscal_receipt_id,
     base_amount, rate, amount, certificate_number, notes,
+    sufrida_emitida, tipo, regimen, proveedor_cliente, cuit,
   } = req.body;
 
   if (!VALID_TYPES.includes(type)) {
@@ -67,7 +81,12 @@ router.post('/', authenticate, MANAGER, async (req, res) => {
       rate:               parseFloat(rate         || 0),
       amount:             parseFloat(amount),
       certificate_number: (certificate_number || '').trim() || null,
-      notes:              (notes || '').trim(),
+      notes:              (notes              || '').trim(),
+      sufrida_emitida:    sufrida_emitida || 'sufrida',
+      tipo:               (tipo           || '').trim() || null,
+      regimen:            (regimen        || '').trim() || null,
+      proveedor_cliente:  (proveedor_cliente || '').trim() || null,
+      cuit:               (cuit           || '').trim() || null,
       created_by:         req.user.id,
     }])
     .select()

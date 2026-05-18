@@ -11,6 +11,8 @@ const MANAGER_ROLES = ['encargado', 'dueno'];
 
 // ── Helpers ────────────────────────────────────────────────────
 
+function round2(n) { return Math.round(parseFloat(n || 0) * 100) / 100; }
+
 async function getOpenSession(branchId) {
   const { data } = await supabase
     .from('cash_sessions')
@@ -35,6 +37,69 @@ async function calcSessionTotals(sessionId) {
     if (m.type === 'manual_out') totals.manual_out += parseFloat(m.amount);
   }
   return totals;
+}
+
+// Calcula el desglose automático de ingresos/egresos por medio de pago
+async function calcBreakdownForSession(session, companyId) {
+  // Ventas en el rango de la sesión con desglose por medio de pago
+  const { data: sales } = await supabase
+    .from('sales')
+    .select('payment_breakdown')
+    .eq('company_id', companyId)
+    .eq('branch_id', session.branch_id)
+    .eq('status', 'completed')
+    .gte('created_at', session.opened_at);
+
+  const ingresosByPM = {};
+  for (const sale of sales ?? []) {
+    const breakdown = sale.payment_breakdown ?? {};
+    for (const [method, amount] of Object.entries(breakdown)) {
+      const key = method.toUpperCase();
+      ingresosByPM[key] = round2((ingresosByPM[key] || 0) + parseFloat(amount || 0));
+    }
+  }
+
+  // Gastos del día de apertura agrupados por medio de pago
+  const sessionDate = session.opened_at.split('T')[0];
+  const { data: expenses } = await supabase
+    .from('expenses')
+    .select('amount, payment_method')
+    .eq('company_id', companyId)
+    .eq('expense_date', sessionDate);
+
+  const egresosByPM = {};
+  for (const exp of expenses ?? []) {
+    const key = (exp.payment_method || 'efectivo').toUpperCase();
+    egresosByPM[key] = round2((egresosByPM[key] || 0) + parseFloat(exp.amount || 0));
+  }
+
+  // Movimientos manuales de la sesión
+  const { data: movements } = await supabase
+    .from('cash_movements')
+    .select('type, amount')
+    .eq('session_id', session.id);
+
+  let manualIn = 0, manualOut = 0;
+  for (const m of movements ?? []) {
+    if (m.type === 'manual_in')  manualIn  += parseFloat(m.amount);
+    if (m.type === 'manual_out') manualOut += parseFloat(m.amount);
+  }
+
+  const totalIngresos = round2(Object.values(ingresosByPM).reduce((a, b) => a + b, 0) + manualIn);
+  const totalEgresos  = round2(Object.values(egresosByPM).reduce((a, b) => a + b, 0) + manualOut);
+  const balanceFinal  = round2(parseFloat(session.opening_amount) + totalIngresos - totalEgresos);
+
+  return {
+    type:                'auto',
+    ingresos_por_metodo: ingresosByPM,
+    egresos_por_metodo:  egresosByPM,
+    manual_in:           round2(manualIn),
+    manual_out:          round2(manualOut),
+    apertura:            parseFloat(session.opening_amount),
+    total_ingresos:      totalIngresos,
+    total_egresos:       totalEgresos,
+    balance_final:       balanceFinal,
+  };
 }
 
 // ── POST /api/cash/open — Abrir caja ──────────────────────────
@@ -70,13 +135,27 @@ router.post('/open', authenticate, requireRole(...CASH_ROLES), async (req, res) 
   res.status(201).json(data);
 });
 
+// ── GET /api/cash/close-breakdown — Recuento automático (dueño) ──
+router.get('/close-breakdown', authenticate, requireRole('dueno'), async (req, res) => {
+  const branchId = req.user.branch_id;
+  if (!branchId) return res.status(400).json({ error: 'Usuario sin sucursal asignada' });
+
+  const session = await getOpenSession(branchId);
+  if (!session) return res.status(404).json({ error: 'No hay sesión de caja abierta en esta sucursal' });
+
+  try {
+    const breakdown = await calcBreakdownForSession(session, req.user.company_id);
+    res.json(breakdown);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/cash/close — Cerrar caja ───────────────────────
 router.post('/close', authenticate, requireRole(...CASH_ROLES), async (req, res) => {
-  const { closing_amount, notes } = req.body;
-
-  if (closing_amount === undefined || isNaN(parseFloat(closing_amount))) {
-    return res.status(400).json({ error: 'closing_amount es requerido' });
-  }
+  const { closing_amount, notes, manual_breakdown } = req.body;
+  const role    = req.user.role;
+  const isOwner = role === 'dueno';
 
   const branchId = req.user.branch_id;
   if (!branchId) return res.status(400).json({ error: 'Usuario sin sucursal asignada' });
@@ -84,23 +163,87 @@ router.post('/close', authenticate, requireRole(...CASH_ROLES), async (req, res)
   const session = await getOpenSession(branchId);
   if (!session) return res.status(404).json({ error: 'No hay sesión de caja abierta en esta sucursal' });
 
-  const totals = await calcSessionTotals(session.id);
-  const expectedAmount =
-    parseFloat(session.opening_amount) +
-    totals.sales +
-    totals.manual_in -
-    totals.expenses -
-    totals.manual_out;
+  let closeBreakdown;
+  let closingAmt;
 
-  const closingAmt = parseFloat(closing_amount);
-  const difference = closingAmt - expectedAmount;
+  if (isOwner) {
+    // Dueño: cierre automático basado en datos reales del sistema
+    if (closing_amount === undefined || isNaN(parseFloat(closing_amount))) {
+      return res.status(400).json({ error: 'closing_amount es requerido' });
+    }
+    closingAmt     = parseFloat(closing_amount);
+    closeBreakdown = await calcBreakdownForSession(session, req.user.company_id);
+  } else {
+    // Cajero / Encargado: desglose manual obligatorio
+    if (!manual_breakdown || typeof manual_breakdown !== 'object') {
+      return res.status(400).json({ error: 'Se requiere el desglose manual de medios de pago' });
+    }
+    const METHODS = ['efectivo', 'virtual', 'tarjeta'];
+    for (const m of METHODS) {
+      const ing = manual_breakdown[m]?.ingresos;
+      const egr = manual_breakdown[m]?.egresos;
+      if (ing === undefined || isNaN(parseFloat(ing))) {
+        return res.status(400).json({ error: `Ingresá el monto de ingresos para ${m}` });
+      }
+      if (egr === undefined || isNaN(parseFloat(egr))) {
+        return res.status(400).json({ error: `Ingresá el monto de egresos para ${m}` });
+      }
+    }
+
+    const byPM = {};
+    let totalIngresos = 0, totalEgresos = 0;
+    for (const m of METHODS) {
+      const ing = parseFloat(manual_breakdown[m].ingresos || 0);
+      const egr = parseFloat(manual_breakdown[m].egresos  || 0);
+      byPM[m.toUpperCase()] = { ingresos: round2(ing), egresos: round2(egr) };
+      totalIngresos += ing;
+      totalEgresos  += egr;
+    }
+
+    const balanceFinal = round2(parseFloat(session.opening_amount) + totalIngresos - totalEgresos);
+    closingAmt = balanceFinal;
+
+    closeBreakdown = {
+      type:            'manual',
+      role,
+      payment_methods: byPM,
+      apertura:        parseFloat(session.opening_amount),
+      total_ingresos:  round2(totalIngresos),
+      total_egresos:   round2(totalEgresos),
+      balance_final:   balanceFinal,
+    };
+
+    // Calcular también el recuento automático para poder comparar luego en "Recuentos"
+    try {
+      const autoData = await calcBreakdownForSession(session, req.user.company_id);
+      closeBreakdown.auto_breakdown = {
+        ingresos_por_metodo: autoData.ingresos_por_metodo,
+        egresos_por_metodo:  autoData.egresos_por_metodo,
+        manual_in:           autoData.manual_in,
+        manual_out:          autoData.manual_out,
+        total_ingresos:      autoData.total_ingresos,
+        total_egresos:       autoData.total_egresos,
+        balance_final:       autoData.balance_final,
+      };
+    } catch {
+      // no-crítico: el cierre continúa aunque falle el cálculo automático
+    }
+  }
+
+  const totals = await calcSessionTotals(session.id);
+  const expectedAmount = round2(
+    parseFloat(session.opening_amount) +
+    totals.sales + totals.manual_in - totals.expenses - totals.manual_out
+  );
+  const difference = round2(closingAmt - expectedAmount);
 
   const { data, error } = await supabase
     .from('cash_sessions')
     .update({
       closing_amount:  closingAmt,
-      expected_amount: Math.round(expectedAmount * 100) / 100,
-      difference:      Math.round(difference * 100) / 100,
+      expected_amount: expectedAmount,
+      difference,
+      close_breakdown: closeBreakdown,
       status:          'closed',
       closed_by:       req.user.id,
       closed_at:       new Date().toISOString(),
@@ -112,6 +255,54 @@ router.post('/close', authenticate, requireRole(...CASH_ROLES), async (req, res)
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
+});
+
+// ── GET /api/cash/recuentos — Comparativa auto vs manual (dueño) ──
+router.get('/recuentos', authenticate, requireRole('dueno'), async (req, res) => {
+  const { from, to, branch_id } = req.query;
+
+  let query = supabase
+    .from('cash_sessions')
+    .select('id, opened_at, closed_at, opening_amount, closing_amount, expected_amount, difference, close_breakdown, branch_id, opened_by, closed_by, branches(name), opener:users!opened_by(name), closer:users!closed_by(name)')
+    .eq('company_id', req.user.company_id)
+    .eq('status', 'closed')
+    .not('close_breakdown', 'is', null)
+    .order('closed_at', { ascending: false });
+
+  if (branch_id) query = query.eq('branch_id', branch_id);
+  if (from)      query = query.gte('closed_at', from);
+  if (to)        query = query.lte('closed_at', to + 'T23:59:59Z');
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const result = (data ?? [])
+    .filter(s => s.close_breakdown?.type === 'manual')
+    .map(s => {
+      const manual = s.close_breakdown;
+      const auto   = manual.auto_breakdown ?? null;
+      const balanceDiff = auto !== null
+        ? round2(auto.balance_final - manual.balance_final)
+        : null;
+      return {
+        id:               s.id,
+        opened_at:        s.opened_at,
+        closed_at:        s.closed_at,
+        branch_name:      s.branches?.name  ?? null,
+        opened_by_name:   s.opener?.name    ?? null,
+        closed_by_name:   s.closer?.name    ?? null,
+        closed_by_role:   manual.role       ?? null,
+        opening_amount:   parseFloat(s.opening_amount),
+        expected_amount:  s.expected_amount,
+        closing_amount:   s.closing_amount,
+        difference:       s.difference,
+        manual_breakdown: manual,
+        auto_breakdown:   auto,
+        balance_diff:     balanceDiff,
+      };
+    });
+
+  res.json(result);
 });
 
 // ── GET /api/cash/status — Estado actual de caja ─────────────

@@ -1,128 +1,54 @@
 Lista de Tareas. (No pases a la siguiente tarea hasta terminar con una y que no queden errores por resolver de esa tarea)
 
----
+Necesito que generes una vista llamada "Ganancia Neta por Medios de Pago" en el sistema de ventas, accesible únicamente para el rol Dueño.
 
-## 🟥 BLOQUE 1 — Caja (base para flujo de caja y movimientos)
-> Roles: Cajero, Encargado, Dueño
+📌 Requerimientos:
 
-- [x] **1. Arqueo / Apertura / Cierre de caja**
-  - DB: tabla `cash_sessions` (apertura, cierre, monto inicial, monto final, diferencia, branch_id)
-  - DB: tabla `cash_movements` (ventas, gastos, ingresos manuales vinculados a sesión)
-  - Backend: `/api/cash/open`, `/api/cash/close`, `/api/cash/arqueo`, `/api/cash/sessions`
-  - Frontend: página `CashRegisterPage.jsx` (apertura, cierre, arqueo, consulta histórico)
-  - Roles: Cajero (operar), Encargado (operar + ver), Dueño (todo)
+1. **Acceso restringido:**
+   - Solo el rol Dueño puede ver esta vista.
 
-- [x] **2. Movimientos de Caja** (Encargado, Dueño)
-  - Depende de: tarea 1
-  - Frontend: página `CashMovementsPage.jsx` — listado con filtros por fecha, sucursal, tipo
-  - Backend: filtros en `/api/cash/movements`
+2. **Configuración de comisiones:**
+   - El Dueño debe poder definir y guardar el porcentaje de comisión que retiene cada medio de pago:
+     - TARJETA (ejemplo: 5%).
+     - VIRTUAL (ejemplo: 3%).
+   - Estos porcentajes deben almacenarse en la base de datos y aplicarse automáticamente en los cálculos.
 
-- [x] **3. Flujo de Caja** (Dueño)
-  - Depende de: tareas 1 y 2
-  - Frontend: página `CashFlowPage.jsx` — ingresos vs egresos por período, gráfico de saldo acumulado
-  - Backend: endpoint `/api/reports/cash-flow`
+3. **Contenido de la vista:**
+   - Mostrar un resumen de ingresos por cada medio de pago:
+     - EFECTIVO (sin descuentos).
+     - TARJETA.
+     - VIRTUAL.
+   - Para TARJETA y VIRTUAL, calcular automáticamente:
+     - Monto bruto ingresado.
+     - Comisión retenida (según porcentaje configurado).
+     - Ganancia neta (monto bruto - comisión).
 
----
+4. **Visualización:**
+   - Presentar los datos en una tabla con columnas:
+     - Medio de pago.
+     - Monto bruto.
+     - Comisión aplicada (% y valor).
+     - Ganancia neta.
+   - Incluir un recuadro superior con el **total neto general** sumando todos los medios de pago.
 
-## 🟧 BLOQUE 2 — Proveedores y Stock
+5. **Filtros:**
+   - Permitir filtrar por:
+     - Fecha (día, mes, rango).
+     - Sucursal.
+     - Tipo de operación (venta, devolución).
+   - Botón **Consultar** para actualizar resultados.
 
-- [x] **4. Proveedores con saldo**
-  - DB: tabla `suppliers` (name, cuit, contact, balance, company_id)
-  - DB: tabla `supplier_payments` (supplier_id, amount, date, payment_method)
-  - Backend: `/api/suppliers` CRUD + saldo
-  - Frontend: página `SuppliersPage.jsx`
+6. **Consideraciones técnicas:**
+   - Implementar función `calcularGananciaNetaPorMedio()` que:
+     - Obtenga los ingresos brutos por medio de pago.
+     - Aplique el porcentaje de comisión configurado por el Dueño.
+     - Devuelva el neto.
+   - Implementar función `configurarComisionMedioPago()` para que el Dueño pueda modificar los porcentajes desde la interfaz.
+   - Guardar cada cálculo con referencia a fecha y sucursal.
+   - Permitir exportar la tabla a Excel/PDF.
 
-- [x] **5. Transferencia de stock entre sucursales** (Encargado, Dueño)
-  - DB: tabla `stock_transfers` (from_branch_id, to_branch_id, product_id, qty, status, notes)
-  - Backend: `/api/stock/transfers` — crear, aprobar, rechazar
-  - Frontend: modal/página en `StockList.jsx`
-
-- [x] **6. Gestión de Pedidos (proveedor / sucursal / depósito)**
-  - Depende de: tarea 4 (proveedores)
-  - DB: tabla `purchase_orders` (supplier_id, items JSONB, status, branch_id, total)
-  - Backend: `/api/purchase-orders` CRUD + recepcionar mercadería (actualiza stock)
-  - Frontend: página `PurchaseOrdersPage.jsx`
-
----
-
-## 🟨 BLOQUE 3 — Reportes financieros (Dueño)
-
-- [x] **7. Otros ingresos / Egresos** (Dueño)
-  - Extensión de `expenses`: agregar tipo `ingreso` además de `egreso`
-  - O nueva tabla `other_income` — a definir con compañero
-  - Frontend: sección en `GastosPage.jsx` o nueva página
-
-- [x] **8. Estado de Resultados** (Dueño)
-  - Depende de: ventas + gastos + costo de productos (cost_price ya existe)
-  - Backend: endpoint `/api/reports/income-statement`  
-    `Ingresos (ventas) - CMV (costo productos vendidos) - Gastos = Resultado`
-  - Frontend: página `IncomeStatementPage.jsx`
-
-- [x] **9. Valorización de Stock** (Dueño)
-  - Backend: endpoint `/api/reports/stock-valuation`  
-    `SUM(stock * cost_price)` agrupado por sucursal/categoría
-  - Frontend: página o sección en `StockList.jsx`
-
-- [x] **10. Ventas por rubro / categoría**
-  - Backend: endpoint `/api/reports/sales-by-category`
-  - Frontend: página `SalesByCategoryPage.jsx` con filtros y totales por categoría
-
-- [x] **11. Clientes con Saldo / Deuda**
-  - DB: columna `balance` en `clients` o tabla `client_ledger`
-  - Actualizar saldo al registrar venta en cuenta corriente y al usar nota de crédito
-  - Frontend: tab en `EmployeesDashboard.jsx` o página `ClientBalancePage.jsx`
-
----
-
-## 🟦 BLOQUE 4 — Documentos comerciales
-
-- [x] **12. Gestión de Nota de Crédito / Débito**
-  - Tabla `credit_notes` ya existe en la BD
-  - Backend: endpoints CRUD `/api/credit-notes` (falta completar)
-  - Frontend: modal de emisión desde `SalesHistory.jsx` + página de gestión
-
-- [x] **13. Remitos de venta**
-  - DB: tabla `remitos` (sale_id, items JSONB, delivered_at, signed_by)
-  - Backend: `/api/remitos` + generación PDF (similar a ticket.js)
-  - Frontend: botón en historial de ventas → genera PDF remito
-
-- [x] **14. Historial de Exportaciones CSV** (Dueño)
-  - DB: tabla `export_logs` (user_id, type, filters JSONB, exported_at)
-  - Backend: middleware que registra cada export + `/api/export-logs`
-  - Frontend: página `ExportHistoryPage.jsx`
-
----
-
-## 🟥 BLOQUE 5 — Integración AFIP/ARCA (alta complejidad)
-> Requiere CUIT, certificado digital AFIP, y definir si se usa WS propio o servicio tercero (ej. Facturador.ar, Afip SDK)
-
-- [x] **15. Comprobantes Fiscales**
-  - Definir tipo de comprobante: Factura A, B, C / Ticket / Nota de crédito fiscal
-  - DB: tabla `fiscal_receipts` vinculada a `sales`
-
-- [x] **16. Facturación en ARCA (AFIP)**
-  - Depende de: tarea 15
-  - Integración con WS de AFIP (WSFE) o servicio tercero
-  - Backend: servicio `afip.js` — autorización CAE
-  - Frontend: botón "Facturar" en `CashierQueue.jsx` / `SalesHistory.jsx`
-
-- [x] **17. Retenciones / Percepciones**
-  - Depende de: tareas 15 y 16
-  - DB: tabla `tax_withholdings` (sale_id, type, amount, agency)
-  - Backend: cálculo según tipo de cliente/proveedor
-
----
-
-## ✅ COMPLETADAS
-
-- [x] **1. Arqueo / Apertura / Cierre de caja**
-- [x] **16b. PDF de Factura con CAE** — `GET /api/fiscal/receipts/:id/pdf`, layout A4 AFIP-compliant, QR URL incluido — DB: `cash_sessions` + `cash_movements`, Backend: `/api/cash/*`, Frontend: `CashRegisterPage.jsx` + ruta `/cash` + NavLink "Apertura"
-
----
-
-## Solucion de errores:
-
-
+🎯 Objetivo final:  
+Que el Dueño pueda ver claramente cuánto dinero ingresó por cada medio de pago y cuál fue la **ganancia neta real**, descontando las comisiones configuradas por él mismo.
 ---
 
 ## 📝 NOTAS:

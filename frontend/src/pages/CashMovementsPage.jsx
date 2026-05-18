@@ -86,7 +86,7 @@ function SummaryCard({ label, amount, colorClass, icon }) {
 }
 
 // ── Página principal ───────────────────────────────────────────
-export default function CashMovementsPage() {
+export default function CashMovementsPage({ hideHeader = false }) {
   const { hasRole, user } = useAuth();
   const isDueno = user?.role === 'dueno';
 
@@ -148,10 +148,12 @@ export default function CashMovementsPage() {
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Movimientos de Caja</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Historial detallado de ingresos y egresos</p>
-      </div>
+      {!hideHeader && (
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Movimientos de Caja</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Historial detallado de ingresos y egresos</p>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">

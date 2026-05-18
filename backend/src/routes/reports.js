@@ -145,101 +145,142 @@ function round2(n) {
 }
 
 // ── GET /api/reports/income-statement ────────────────────────
-// Ingresos - CMV - Gastos + Otros Ingresos = Resultado
-// Query: ?from=YYYY-MM-DD &to=YYYY-MM-DD &branch_id=uuid
+// Per-branch P&L breakdown + stock valuation
+// Query: ?from=YYYY-MM-DD &to=YYYY-MM-DD
 router.get('/income-statement', authenticate, OWNER, async (req, res) => {
   const from = req.query.from || monthStartStr();
   const to   = req.query.to   || todayStr();
-  const { branch_id } = req.query;
+  const companyId = req.user.company_id;
 
-  // ── 1. Sales (completed only) ───────────────────────────────
-  let salesQ = supabase
+  // ── 1. All branches ─────────────────────────────────────────
+  const { data: branchRows, error: brErr } = await supabase
+    .from('branches')
+    .select('id, name')
+    .eq('company_id', companyId);
+  if (brErr) return res.status(500).json({ error: brErr.message });
+
+  // ── 2. Sales per branch ──────────────────────────────────────
+  const { data: salesRows, error: salErr } = await supabase
     .from('sales')
-    .select('total, details_json')
-    .eq('company_id', req.user.company_id)
+    .select('branch_id, total, details_json, payment_breakdown')
+    .eq('company_id', companyId)
     .eq('status', 'completed')
     .gte('date', from)
     .lte('date', to);
-  if (branch_id) salesQ = salesQ.eq('branch_id', branch_id);
+  if (salErr) return res.status(500).json({ error: salErr.message });
 
-  // ── 2. Expenses (gastos only) ───────────────────────────────
-  let expQ = supabase
+  // ── 3. Payment methods (for financial cost) ──────────────────
+  const { data: pmRows } = await supabase
+    .from('payment_methods')
+    .select('name, commission_pct')
+    .eq('company_id', companyId);
+  const pmMap = {};
+  (pmRows ?? []).forEach((p) => { pmMap[p.name] = parseFloat(p.commission_pct || 0); });
+
+  // ── 4. Total expenses (no branch_id col) ────────────────────
+  const { data: expRows, error: expErr } = await supabase
     .from('expenses')
     .select('amount')
-    .eq('company_id', req.user.company_id)
-    .eq('type', 'gasto')
+    .eq('company_id', companyId)
     .gte('expense_date', from)
     .lte('expense_date', to);
+  if (expErr) return res.status(500).json({ error: expErr.message });
+  const totalExpenses = (expRows ?? []).reduce((s, r) => s + parseFloat(r.amount || 0), 0);
 
-  // ── 3. Other income (ingresos) ──────────────────────────────
-  let incQ = supabase
-    .from('expenses')
-    .select('amount')
-    .eq('company_id', req.user.company_id)
-    .eq('type', 'ingreso')
-    .gte('expense_date', from)
-    .lte('expense_date', to);
-
-  const [salesRes, expRes, incRes] = await Promise.all([salesQ, expQ, incQ]);
-  if (salesRes.error) return res.status(500).json({ error: salesRes.error.message });
-  if (expRes.error)   return res.status(500).json({ error: expRes.error.message });
-  if (incRes.error)   return res.status(500).json({ error: incRes.error.message });
-
-  // ── Compute revenue ──────────────────────────────────────────
-  const totalRevenue    = (salesRes.data ?? []).reduce((s, r) => s + parseFloat(r.total || 0), 0);
-  const totalOtherIncome= (incRes.data   ?? []).reduce((s, r) => s + parseFloat(r.amount || 0), 0);
-  const totalExpenses   = (expRes.data   ?? []).reduce((s, r) => s + parseFloat(r.amount || 0), 0);
-
-  // ── Compute COGS (Costo de Mercadería Vendida) ───────────────
-  // Collect all product_ids from sold items
+  // ── 5. COGS cost map ─────────────────────────────────────────
   const productIds = new Set();
-  for (const sale of salesRes.data ?? []) {
-    for (const item of sale.details_json ?? []) {
+  for (const s of salesRows ?? []) {
+    for (const item of s.details_json ?? []) {
       if (item.product_id) productIds.add(item.product_id);
     }
   }
-
-  let costMap = {};
+  const costMap = {};
   if (productIds.size > 0) {
-    const { data: products } = await supabase
+    const { data: prods } = await supabase
       .from('products')
       .select('id, cost_price')
       .in('id', [...productIds]);
-    (products ?? []).forEach((p) => { costMap[p.id] = parseFloat(p.cost_price || 0); });
+    (prods ?? []).forEach((p) => { costMap[p.id] = parseFloat(p.cost_price || 0); });
   }
 
-  let cogs = 0;
-  for (const sale of salesRes.data ?? []) {
+  // ── 6. Stock value per branch ────────────────────────────────
+  const { data: stockRows } = await supabase
+    .from('products')
+    .select('branch_id, stock, cost_price')
+    .eq('company_id', companyId)
+    .gt('stock', 0);
+  const stockByBranch = {};
+  for (const p of stockRows ?? []) {
+    const bId = p.branch_id;
+    if (!bId) continue;
+    stockByBranch[bId] = (stockByBranch[bId] || 0) + parseFloat(p.cost_price || 0) * parseInt(p.stock || 0);
+  }
+
+  // ── 7. Aggregate per branch ──────────────────────────────────
+  const branchMap = {};
+  for (const b of branchRows ?? []) {
+    branchMap[b.id] = { branch_id: b.id, branch_name: b.name, sales: 0, cogs: 0, financial_cost: 0 };
+  }
+
+  for (const sale of salesRows ?? []) {
+    const bId = sale.branch_id;
+    if (!branchMap[bId]) continue;
+    const saleTotal = parseFloat(sale.total || 0);
+    branchMap[bId].sales += saleTotal;
+
+    // COGS
     for (const item of sale.details_json ?? []) {
       if (item.product_id && costMap[item.product_id] !== undefined) {
-        cogs += (costMap[item.product_id] * parseInt(item.qty || 1));
+        branchMap[bId].cogs += costMap[item.product_id] * parseInt(item.qty || 1);
       }
+    }
+
+    // Financial cost from payment breakdown
+    const breakdown = sale.payment_breakdown ?? {};
+    for (const [pmName, amount] of Object.entries(breakdown)) {
+      const pct = pmMap[pmName] || 0;
+      branchMap[bId].financial_cost += parseFloat(amount || 0) * (pct / 100);
     }
   }
 
-  // ── P&L calculation ──────────────────────────────────────────
-  const grossProfit  = totalRevenue - cogs;
-  const operResult   = grossProfit - totalExpenses + totalOtherIncome;
-  const grossMargin  = totalRevenue > 0 ? round2((grossProfit / totalRevenue) * 100) : 0;
-  const netMargin    = totalRevenue > 0 ? round2((operResult  / totalRevenue) * 100) : 0;
+  // ── 8. Distribute expenses proportionally ───────────────────
+  const totalSales = Object.values(branchMap).reduce((s, b) => s + b.sales, 0);
+
+  const branches = Object.values(branchMap).map((b) => {
+    const share    = totalSales > 0 ? b.sales / totalSales : 1 / (branchRows.length || 1);
+    const expenses = round2(totalExpenses * share);
+    const grossProfit = round2(b.sales - b.cogs - b.financial_cost);
+    return {
+      branch_id:      b.branch_id,
+      branch_name:    b.branch_name,
+      sales:          round2(b.sales),
+      cogs:           round2(b.cogs),
+      financial_cost: round2(b.financial_cost),
+      gross_profit:   grossProfit,
+      expenses,
+      result:         round2(grossProfit - expenses),
+      stock_value:    round2(stockByBranch[b.branch_id] || 0),
+    };
+  });
+
+  const totalStockValue = branches.reduce((s, b) => s + b.stock_value, 0);
+  const totalCogs       = branches.reduce((s, b) => s + b.cogs, 0);
+  const totalFinCost    = branches.reduce((s, b) => s + b.financial_cost, 0);
+  const totalGross      = round2(totalSales - totalCogs - totalFinCost);
 
   res.json({
     from,
     to,
-    revenue: {
-      sales:        round2(totalRevenue),
-      other_income: round2(totalOtherIncome),
-      total:        round2(totalRevenue + totalOtherIncome),
+    branches,
+    total: {
+      sales:          round2(totalSales),
+      cogs:           round2(totalCogs),
+      financial_cost: round2(totalFinCost),
+      gross_profit:   totalGross,
+      expenses:       round2(totalExpenses),
+      result:         round2(totalGross - totalExpenses),
+      stock_value:    round2(totalStockValue),
     },
-    costs: {
-      cogs:     round2(cogs),
-      expenses: round2(totalExpenses),
-      total:    round2(cogs + totalExpenses),
-    },
-    gross_profit:  round2(grossProfit),
-    gross_margin:  grossMargin,
-    result:        round2(operResult),
-    net_margin:    netMargin,
   });
 });
 
@@ -384,6 +425,91 @@ router.get('/sales-by-category', authenticate, OWNER, async (req, res) => {
     grand_units: grandUnits,
     categories,
   });
+});
+
+// ── GET /api/reports/net-profit-by-payment ───────────────────
+// Gross income per payment method minus commissions → net profit
+// Query: ?from=YYYY-MM-DD &to=YYYY-MM-DD &branch_id=UUID
+router.get('/net-profit-by-payment', authenticate, OWNER, async (req, res) => {
+  const from      = req.query.from || monthStartStr();
+  const to        = req.query.to   || todayStr();
+  const { branch_id } = req.query;
+  const toEnd     = to + 'T23:59:59';
+
+  // 1. Payment methods with commission_pct for this company
+  const { data: pmRows, error: pmErr } = await supabase
+    .from('payment_methods')
+    .select('id, name, commission_pct, active')
+    .eq('company_id', req.user.company_id);
+  if (pmErr) return res.status(500).json({ error: pmErr.message });
+
+  // Map name (lowercase) → commission_pct
+  const commissionMap = {};
+  for (const pm of pmRows ?? []) {
+    commissionMap[pm.name.toLowerCase()] = parseFloat(pm.commission_pct || 0);
+  }
+
+  // 2. Completed sales in date range
+  let salesQuery = supabase
+    .from('sales')
+    .select('total, payment_method, payment_breakdown')
+    .eq('company_id', req.user.company_id)
+    .eq('status', 'completed')
+    .gte('date', from)
+    .lte('date', to);
+
+  if (branch_id) salesQuery = salesQuery.eq('branch_id', branch_id);
+
+  const { data: sales, error: sErr } = await salesQuery;
+  if (sErr) return res.status(500).json({ error: sErr.message });
+
+  // 3. Aggregate gross per payment method name
+  const grossByMethod = {};
+  for (const sale of sales ?? []) {
+    const bd = sale.payment_breakdown;
+    if (bd && typeof bd === 'object' && Object.keys(bd).length > 0) {
+      for (const [method, amount] of Object.entries(bd)) {
+        const key = method.toLowerCase();
+        grossByMethod[key] = (grossByMethod[key] || 0) + parseFloat(amount || 0);
+      }
+    } else if (sale.payment_method) {
+      const key = sale.payment_method.toLowerCase();
+      grossByMethod[key] = (grossByMethod[key] || 0) + parseFloat(sale.total || 0);
+    }
+  }
+
+  // 4. Build result per method — include all methods with data or commission config
+  const allKeys = new Set([
+    ...Object.keys(grossByMethod),
+    ...Object.keys(commissionMap),
+  ]);
+
+  const methods = [];
+  for (const key of allKeys) {
+    const gross        = grossByMethod[key] || 0;
+    const commPct      = commissionMap[key]  || 0;
+    const commValue    = round2(gross * commPct / 100);
+    const net          = round2(gross - commValue);
+    methods.push({
+      method:           key,
+      method_display:   key.charAt(0).toUpperCase() + key.slice(1),
+      gross:            round2(gross),
+      commission_pct:   commPct,
+      commission_value: commValue,
+      net,
+    });
+  }
+
+  // Sort by gross descending
+  methods.sort((a, b) => b.gross - a.gross);
+
+  const totals = {
+    gross:            round2(methods.reduce((s, m) => s + m.gross,            0)),
+    commission_value: round2(methods.reduce((s, m) => s + m.commission_value, 0)),
+    net:              round2(methods.reduce((s, m) => s + m.net,              0)),
+  };
+
+  res.json({ from, to, methods, totals });
 });
 
 module.exports = router;

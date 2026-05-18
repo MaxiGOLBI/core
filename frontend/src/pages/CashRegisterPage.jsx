@@ -97,56 +97,137 @@ function MovementModal({ type, onConfirm, onClose }) {
   );
 }
 
-// ── Modal: cierre de caja ──────────────────────────────────────
-function CloseModal({ expectedAmount, onConfirm, onClose }) {
-  const [closingAmount, setClosingAmount] = useState('');
+// ── Constante de medios de pago para cierre manual ────────────
+const PAYMENT_METHODS = [
+  { key: 'efectivo', label: 'Efectivo' },
+  { key: 'virtual',  label: 'Virtual'  },
+  { key: 'tarjeta',  label: 'Tarjeta'  },
+];
+
+// ── Modal: cierre manual (cajero / encargado) ──────────────────
+function ManualCloseModal({ openingAmount, expectedAmount, onConfirm, onClose }) {
+  const empty = { ingresos: '', egresos: '' };
+  const [fields, setFields] = useState({
+    efectivo: { ...empty },
+    virtual:  { ...empty },
+    tarjeta:  { ...empty },
+  });
   const [notes, setNotes] = useState('');
 
-  const diff = closingAmount !== '' ? parseFloat(closingAmount) - expectedAmount : null;
+  function setField(method, side, value) {
+    setFields(prev => ({ ...prev, [method]: { ...prev[method], [side]: value } }));
+  }
+
+  const rows = PAYMENT_METHODS.map(m => {
+    const ing = parseFloat(fields[m.key].ingresos || 0);
+    const egr = parseFloat(fields[m.key].egresos  || 0);
+    return { ...m, ing, egr, total: ing - egr };
+  });
+
+  const totalIngresos = rows.reduce((s, r) => s + r.ing, 0);
+  const totalEgresos  = rows.reduce((s, r) => s + r.egr, 0);
+  const balanceFinal  = openingAmount + totalIngresos - totalEgresos;
+  const diff          = balanceFinal - expectedAmount;
 
   function handleSubmit(e) {
     e.preventDefault();
-    const parsed = parseFloat(closingAmount);
-    if (isNaN(parsed) || parsed < 0) { showToast('Ingresá un monto válido', 'error'); return; }
-    onConfirm({ closing_amount: parsed, notes: notes.trim() });
+    for (const m of PAYMENT_METHODS) {
+      if (fields[m.key].ingresos === '') {
+        showToast(`Ingresá los ingresos para ${m.label}`, 'error'); return;
+      }
+      if (fields[m.key].egresos === '') {
+        showToast(`Ingresá los egresos para ${m.label}`, 'error'); return;
+      }
+    }
+    const manual_breakdown = {};
+    for (const m of PAYMENT_METHODS) {
+      manual_breakdown[m.key] = {
+        ingresos: parseFloat(fields[m.key].ingresos),
+        egresos:  parseFloat(fields[m.key].egresos),
+      };
+    }
+    onConfirm({ manual_breakdown, notes: notes.trim() });
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
         <h2 className="text-lg font-bold text-slate-800 mb-1">Cerrar Caja</h2>
-        <p className="text-sm text-slate-500 mb-4">Contá el efectivo y registrá el monto real.</p>
+        <p className="text-sm text-slate-500 mb-4">Ingresá los montos por cada medio de pago.</p>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="bg-slate-50 rounded-lg p-3 text-sm flex justify-between">
-            <span className="text-slate-600">Efectivo esperado:</span>
-            <span className="font-semibold text-slate-800">{fmtMoney(expectedAmount)}</span>
+          {/* Campos por método */}
+          <div className="space-y-3">
+            {PAYMENT_METHODS.map(m => {
+              const row = rows.find(r => r.key === m.key);
+              return (
+                <div key={m.key} className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">{m.label}</p>
+                  <div className="grid grid-cols-3 gap-2 items-end">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Ingresos</label>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={fields[m.key].ingresos}
+                        onChange={e => setField(m.key, 'ingresos', e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Egresos</label>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={fields[m.key].egresos}
+                        onChange={e => setField(m.key, 'egresos', e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="text-right pb-0.5">
+                      <p className="text-xs text-slate-400 mb-1">Total</p>
+                      <p className={`text-sm font-bold ${row?.total >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {fmtMoney(row?.total ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Monto real contado</label>
-            <input
-              type="number" min="0" step="0.01"
-              value={closingAmount}
-              onChange={e => setClosingAmount(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="0.00"
-              autoFocus
-            />
-            {diff !== null && (
-              <p className={`mt-1.5 text-xs font-semibold ${diff >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                Diferencia: {diff >= 0 ? '+' : ''}{fmtMoney(diff)}
+
+          {/* Totales */}
+          <div className="bg-blue-50 rounded-xl p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-600">Total ingresos:</span>
+              <span className="font-semibold text-emerald-700">{fmtMoney(totalIngresos)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">Total egresos:</span>
+              <span className="font-semibold text-rose-600">{fmtMoney(totalEgresos)}</span>
+            </div>
+            <div className="flex justify-between border-t border-blue-200 pt-1.5">
+              <span className="font-bold text-slate-700">Balance final:</span>
+              <span className={`font-bold text-base ${balanceFinal >= 0 ? 'text-blue-700' : 'text-rose-600'}`}>
+                {fmtMoney(balanceFinal)}
+              </span>
+            </div>
+            {expectedAmount > 0 && (
+              <p className={`text-xs font-semibold text-right ${diff >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                Diferencia con sistema: {diff >= 0 ? '+' : ''}{fmtMoney(diff)}
               </p>
             )}
           </div>
+
+          {/* Notas */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Notas (opcional)</label>
             <input
-              type="text"
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
+              type="text" value={notes} onChange={e => setNotes(e.target.value)}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Observaciones..."
+              placeholder="Observaciones del cierre..."
             />
           </div>
+
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose}
               className="flex-1 px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
@@ -154,10 +235,156 @@ function CloseModal({ expectedAmount, onConfirm, onClose }) {
             </button>
             <button type="submit"
               className="flex-1 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold transition-colors">
-              Cerrar Caja
+              Confirmar Cierre
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal: cierre automático (dueño) ──────────────────────────
+function OwnerCloseModal({ onConfirm, onClose }) {
+  const [breakdown, setBreakdown] = useState(null);
+  const [loadingBreakdown, setLoadingBreakdown] = useState(true);
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    api.get('/api/cash/close-breakdown')
+      .then(data => setBreakdown(data))
+      .catch(err => showToast(err.message, 'error'))
+      .finally(() => setLoadingBreakdown(false));
+  }, []);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!breakdown) return;
+    onConfirm({ closing_amount: breakdown.balance_final, notes: notes.trim() });
+  }
+
+  const allIngMethods = breakdown
+    ? Object.entries(breakdown.ingresos_por_metodo ?? {}).filter(([, v]) => v > 0)
+    : [];
+  const allEgrMethods = breakdown
+    ? Object.entries(breakdown.egresos_por_metodo ?? {}).filter(([, v]) => v > 0)
+    : [];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Cerrar Caja</h2>
+            <p className="text-sm text-slate-500">Recuento automático del sistema</p>
+          </div>
+          <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-1 rounded-full">Dueño</span>
+        </div>
+
+        {loadingBreakdown ? (
+          <div className="flex justify-center py-8">
+            <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : !breakdown ? (
+          <p className="text-sm text-rose-600 py-4">Error al cargar el recuento. Intentá de nuevo.</p>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Apertura */}
+            <div className="bg-slate-50 rounded-xl p-3 flex justify-between text-sm">
+              <span className="text-slate-600">Monto de apertura:</span>
+              <span className="font-semibold text-slate-700">{fmtMoney(breakdown.apertura)}</span>
+            </div>
+
+            {/* Ingresos por método */}
+            <div>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ingresos por medio de pago</h3>
+              <div className="bg-emerald-50 rounded-xl overflow-hidden divide-y divide-emerald-100">
+                {allIngMethods.length === 0 && breakdown.manual_in === 0 ? (
+                  <p className="px-4 py-2.5 text-sm text-slate-400">Sin ingresos por ventas registrados</p>
+                ) : (
+                  <>
+                    {allIngMethods.map(([method, amount]) => (
+                      <div key={method} className="px-4 py-2.5 flex justify-between text-sm">
+                        <span className="text-slate-600">{method}</span>
+                        <span className="font-semibold text-emerald-700">{fmtMoney(amount)}</span>
+                      </div>
+                    ))}
+                    {breakdown.manual_in > 0 && (
+                      <div className="px-4 py-2.5 flex justify-between text-sm">
+                        <span className="text-slate-500 italic">Ingresos manuales</span>
+                        <span className="font-semibold text-emerald-700">{fmtMoney(breakdown.manual_in)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Egresos por método */}
+            <div>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Egresos por medio de pago</h3>
+              <div className="bg-rose-50 rounded-xl overflow-hidden divide-y divide-rose-100">
+                {allEgrMethods.length === 0 && breakdown.manual_out === 0 ? (
+                  <p className="px-4 py-2.5 text-sm text-slate-400">Sin egresos registrados</p>
+                ) : (
+                  <>
+                    {allEgrMethods.map(([method, amount]) => (
+                      <div key={method} className="px-4 py-2.5 flex justify-between text-sm">
+                        <span className="text-slate-600">{method}</span>
+                        <span className="font-semibold text-rose-600">{fmtMoney(amount)}</span>
+                      </div>
+                    ))}
+                    {breakdown.manual_out > 0 && (
+                      <div className="px-4 py-2.5 flex justify-between text-sm">
+                        <span className="text-slate-500 italic">Egresos manuales</span>
+                        <span className="font-semibold text-rose-600">{fmtMoney(breakdown.manual_out)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Totales */}
+            <div className="bg-blue-50 rounded-xl p-3 space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Total ingresos:</span>
+                <span className="font-semibold text-emerald-700">{fmtMoney(breakdown.total_ingresos)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Total egresos:</span>
+                <span className="font-semibold text-rose-600">{fmtMoney(breakdown.total_egresos)}</span>
+              </div>
+              <div className="flex justify-between border-t border-blue-200 pt-1.5">
+                <span className="font-bold text-slate-800">Balance final:</span>
+                <span className={`font-bold text-base ${breakdown.balance_final >= 0 ? 'text-blue-700' : 'text-rose-600'}`}>
+                  {fmtMoney(breakdown.balance_final)}
+                </span>
+              </div>
+            </div>
+
+            {/* Notas */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notas (opcional)</label>
+              <input
+                type="text" value={notes} onChange={e => setNotes(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Observaciones del cierre..."
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={onClose}
+                className="flex-1 px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                Cancelar
+              </button>
+              <button type="submit"
+                className="flex-1 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold transition-colors">
+                Confirmar Cierre
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -174,7 +401,7 @@ function SummaryCard({ label, amount, colorClass }) {
 }
 
 // ── Página principal ───────────────────────────────────────────
-export default function CashRegisterPage() {
+export default function CashRegisterPage({ hideHeader = false }) {
   const { hasRole, user } = useAuth();
 
   const [status, setStatus]         = useState(null);   // { session, summary } | null
@@ -316,20 +543,22 @@ export default function CashRegisterPage() {
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Caja</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Apertura, cierre y movimientos de caja</p>
+      {!hideHeader && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Caja</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Apertura, cierre y movimientos de caja</p>
+          </div>
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold ${
+            isOpen
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-slate-100 text-slate-500'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+            {isOpen ? 'Abierta' : 'Cerrada'}
+          </span>
         </div>
-        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold ${
-          isOpen
-            ? 'bg-emerald-100 text-emerald-700'
-            : 'bg-slate-100 text-slate-500'
-        }`}>
-          <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-          {isOpen ? 'Abierta' : 'Cerrada'}
-        </span>
-      </div>
+      )}
 
       {/* ── CAJA CERRADA: formulario de apertura ── */}
       {!isOpen && (
@@ -574,8 +803,15 @@ export default function CashRegisterPage() {
           onClose={() => setMovementModal(null)}
         />
       )}
-      {showCloseModal && (
-        <CloseModal
+      {showCloseModal && isDueno && (
+        <OwnerCloseModal
+          onConfirm={handleClose}
+          onClose={() => setShowCloseModal(false)}
+        />
+      )}
+      {showCloseModal && !isDueno && (
+        <ManualCloseModal
+          openingAmount={parseFloat(session?.opening_amount ?? 0)}
           expectedAmount={summary?.expected_amount ?? 0}
           onConfirm={handleClose}
           onClose={() => setShowCloseModal(false)}

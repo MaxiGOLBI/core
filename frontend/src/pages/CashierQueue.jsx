@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import ComprobanteModal from '../components/ComprobanteModal';
 import { showToast } from '../components/Toast';
 
-export default function CashierQueue() {
+export default function CashierQueue({ hideHeader = false }) {
   const { refreshUser } = useAuth();
   const [queue, setQueue]       = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -63,15 +63,17 @@ export default function CashierQueue() {
   return (
     <>
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
-      <div className="relative overflow-hidden bg-gradient-to-r from-blue-700 to-cyan-500 rounded-2xl px-5 py-5 sm:px-8 sm:py-6 mb-6 shadow-lg">
-        <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full bg-white/10 pointer-events-none" />
-        <div className="absolute right-20 -bottom-10 w-32 h-32 rounded-full bg-cyan-300/20 pointer-events-none" />
-        <div className="absolute top-4 right-48 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
-        <div className="relative">
-          <h1 className="text-2xl font-bold text-white">Cola de Caja</h1>
-          <p className="text-blue-100 text-sm mt-1">Ventas confirmadas esperando cobro</p>
+      {!hideHeader && (
+        <div className="relative overflow-hidden bg-gradient-to-r from-blue-700 to-cyan-500 rounded-2xl px-5 py-5 sm:px-8 sm:py-6 mb-6 shadow-lg">
+          <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full bg-white/10 pointer-events-none" />
+          <div className="absolute right-20 -bottom-10 w-32 h-32 rounded-full bg-cyan-300/20 pointer-events-none" />
+          <div className="absolute top-4 right-48 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
+          <div className="relative">
+            <h1 className="text-2xl font-bold text-white">Cola de Caja</h1>
+            <p className="text-blue-100 text-sm mt-1">Ventas confirmadas esperando cobro</p>
+          </div>
         </div>
-      </div>
+      )}
 
 
 
